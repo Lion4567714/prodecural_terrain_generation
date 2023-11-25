@@ -1,7 +1,7 @@
 extends MeshInstance3D
 
-const WIDTH = 20
-const HEIGHT = 20
+const WIDTH = 150
+const HEIGHT = 150
 const CELL_SIZE = 2.0
 #const CON_KERNEL = [[-1, -1, -1],
 #					[-1,  8, -1],
@@ -56,7 +56,7 @@ func _ready():
 	print_status("Adding randomization")
 	noise = FastNoiseLite.new()
 	noise.set_noise_type(FastNoiseLite.TYPE_PERLIN)
-	noise.set_seed(7714)
+	noise.set_seed(Time.get_datetime_dict_from_system().second)
 	
 	height_map = []
 	for x in range(WIDTH + 1):
@@ -151,7 +151,7 @@ func print_status(message):
 
 func generate_grid():
 	var vertices = PackedVector3Array()
-	var indicies = PackedInt32Array()
+	var indices = PackedInt32Array()
 	
 	for y in range(WIDTH + 1):
 		for x in range(HEIGHT + 1):
@@ -164,19 +164,19 @@ func generate_grid():
 			var i2 = i1 + WIDTH
 			var i3 = i2 + 1
 			
-			indicies.push_back(i0)
-			indicies.push_back(i1)
-			indicies.push_back(i2)
+			indices.push_back(i0)
+			indices.push_back(i1)
+			indices.push_back(i2)
 			
-			indicies.push_back(i1)
-			indicies.push_back(i3)
-			indicies.push_back(i2)
+			indices.push_back(i1)
+			indices.push_back(i3)
+			indices.push_back(i2)
 	
 	var arr_mesh = ArrayMesh.new()
 	var arrays = []
 	arrays.resize(Mesh.ARRAY_MAX)
 	arrays[Mesh.ARRAY_VERTEX] = vertices
-	arrays[Mesh.ARRAY_INDEX] = indicies
+	arrays[Mesh.ARRAY_INDEX] = indices
 	
 	arr_mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
 	return arr_mesh
@@ -196,6 +196,7 @@ class WFCNode:
 		num_options = BIOME.size()
 	
 	func limit_options(limit: int) -> void:
+		assert(options & limit > 0, "num_options == 0! options: " + str(options) + ", limit: " + str(limit))
 		options &= limit
 		num_options = HAMMING[options]
 	
@@ -203,14 +204,27 @@ class WFCNode:
 		return a.num_options < b.num_options
 	
 	func _to_string() -> String:
+		#return str(options)
 		return "WFCNode: pos (" + str(pos.x) + ", " + str(pos.y) + "), num_options = " + str(num_options)
+
+
+func limit_options_of_node(node: WFCNode, limit: int, arrays: Array) -> void:
+	var old = node.num_options - 1
+	node.limit_options(limit)
+	var new = node.num_options - 1
+	
+	if new != old:
+		arrays[old].erase(node)
+		arrays[new].append(node)
 
 
 func generate_biome_map():
 	var map = []
 	var node_mat = []
-	var node_arr = []
+	var node_arrs = []	# Array of arrays, index cooresponds to num remaining options + 1
 	var num_uncollapsed_nodes = (WIDTH + 1) * (HEIGHT + 1)
+	for i in range(BIOME.size()):
+		node_arrs.append([])
 	for x in range(WIDTH + 1):
 		var arr1 = []
 		arr1.resize(HEIGHT + 1)
@@ -218,34 +232,20 @@ func generate_biome_map():
 		var arr2 = []
 		arr2.resize(HEIGHT + 1)
 		node_mat.append(arr2)
+		
 		for y in range(HEIGHT + 1):
 			node_mat[x][y] = WFCNode.new(x, y)
-			node_arr.append(node_mat[x][y])
+			node_arrs[BIOME.size() - 1].append(node_mat[x][y])
 	
 	while num_uncollapsed_nodes > 0:
-		# Sort array based on how many options each node has remaining
-		node_arr.sort_custom(WFCNode.sort)		##### SORTING IS THE PROBLEM
-												##### NEED TO USE ARRAYS OF DIFFERENT OPTIONS
-		print(num_uncollapsed_nodes)
+		# Find the first array with > 0 nodes, choose a random node within that array
+		var rand_node
+		for i in range(1, node_arrs.size()):
+			if node_arrs[i].size() > 0:
+				rand_node = node_arrs[i][randi_range(0, node_arrs[i].size() - 1)]
+				break
 		
-		# Find bounds of node_arr of nodes with minimal options remaining
-		# Minimal options remaining > 1, 1 means the node is already collapsed
-		var min_options = -1
-		var start_index
-		var end_index
-		for i in range(node_arr.size()):
-			if node_arr[i].num_options > 1:
-				if min_options == -1:
-					min_options = node_arr[i].num_options
-					start_index = i 
-				elif node_arr[i].num_options > min_options:
-					end_index = i - 1
-					break
-		if end_index == null:
-			end_index = node_arr.size() - 1
-		
-		# Collapse random vertex with minimal options remaining
-		var rand_node = node_arr[randi_range(start_index, end_index)]
+		# Collapse vertex
 		var rand_option_index = randi_range(0, rand_node.num_options - 1)
 		var rand_option
 		for i in range(BIOME.size()):
@@ -255,36 +255,33 @@ func generate_biome_map():
 					rand_node.options = rand_option
 					break;
 				rand_option_index -= 1
+		node_arrs[rand_node.num_options - 1].erase(rand_node)
+		node_arrs[0].append(rand_node)
 		rand_node.num_options = 1
 		num_uncollapsed_nodes -= 1
 		
 		# Update surround nodes
 		var x0 = rand_node.pos.x
 		var y0 = rand_node.pos.y
-		var allowed_biomes = rand_option
 		for i in range(1, BIOME.size()):
-			allowed_biomes |= allowed_biomes >> 1
-			allowed_biomes |= allowed_biomes << 1
-			if (y0 - i) >= 0:
-				for x in range(x0 - i, x0 + i):
+			rand_option |= rand_option >> 1
+			rand_option |= rand_option << 1
+			if y0 - i >= 0:
+				for x in range(x0 - i, x0 + i + 1):
 					if x >= 0 && x <= WIDTH:
-						var old = node_mat[x][y0 - i].num_options
-						node_mat[x][y0 - i].limit_options(allowed_biomes)
-			if (y0 + i) <= HEIGHT:
-				for x in range(x0 - i, x0 + i):
+						limit_options_of_node(node_mat[x][y0 - i], rand_option, node_arrs)
+			if y0 + i <= HEIGHT:
+				for x in range(x0 - i, x0 + i + 1):
 					if x >= 0 && x <= WIDTH:
-						var old = node_mat[x][y0 - i].num_options
-						node_mat[x][y0 + i].limit_options(allowed_biomes)
-			if (x0 - i) >= 0:
-				for y in range(y0 - i, y0 + i):
+						limit_options_of_node(node_mat[x][y0 + i], rand_option, node_arrs)
+			if x0 - i >= 0:
+				for y in range(y0 - i, y0 + i + 1):
 					if y >= 0 && y <= HEIGHT:
-						var old = node_mat[x0 - i][y].num_options
-						node_mat[x0 - i][y].limit_options(allowed_biomes)
-			if (x0 + i) <= WIDTH:
-				for y in range(y0 - i, y0 + i):
+						limit_options_of_node(node_mat[x0 - i][y], rand_option, node_arrs)
+			if x0 + i <= WIDTH:
+				for y in range(y0 - i, y0 + i + 1):
 					if y >= 0 && y <= HEIGHT:
-						var old = node_mat[x0 + i][y].num_options
-						node_mat[x0 + i][y].limit_options(allowed_biomes)
+						limit_options_of_node(node_mat[x0 + i][y], rand_option, node_arrs)
 	
 	for x in range(WIDTH + 1):
 		for y in range(HEIGHT + 1):
