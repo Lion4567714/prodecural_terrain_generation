@@ -30,9 +30,6 @@ const BIOME = {
 const HAMMING = [0, 1, 1, 2, 1, 2, 2, 3]
 
 var last_update_time
-var timer0 = 0.0
-var timer1 = 0.0
-var node_arr_indices
 var biome_map
 var noise
 var height_map
@@ -139,9 +136,6 @@ func _ready():
 	
 	print_status("Done")
 	
-	print("Timer0: ", timer0 / 1_000_000)
-	print("Timer1: ", timer1 / 1_000_000)
-	
 	return
 
 
@@ -212,19 +206,11 @@ class WFCNode:
 		return "WFCNode: pos (" + str(pos.x) + ", " + str(pos.y) + "), num_options = " + str(num_options)
 
 
-func update_arr_indices(old: int, new: int) -> void:
-	for i in range(new - 1, old - 1):
-		node_arr_indices[i] += 1
-
-
 func generate_biome_map():
 	var map = []
 	var node_mat = []
 	var node_arr = []
 	var num_uncollapsed_nodes = (WIDTH + 1) * (HEIGHT + 1)
-	node_arr_indices = []
-	for i in range(BIOME.size() - 1):
-		node_arr_indices.append(0)
 	for x in range(WIDTH + 1):
 		var arr1 = []
 		arr1.resize(HEIGHT + 1)
@@ -238,10 +224,8 @@ func generate_biome_map():
 	
 	while num_uncollapsed_nodes > 0:
 		# Sort array based on how many options each node has remaining
-		var timer1start = Time.get_ticks_usec()
 		node_arr.sort_custom(WFCNode.sort)		##### SORTING IS THE PROBLEM
 												##### NEED TO USE ARRAYS OF DIFFERENT OPTIONS
-		timer1 += Time.get_ticks_usec() - timer1start
 		print(num_uncollapsed_nodes)
 		
 		# Find bounds of node_arr of nodes with minimal options remaining
@@ -261,7 +245,6 @@ func generate_biome_map():
 			end_index = node_arr.size() - 1
 		
 		# Collapse random vertex with minimal options remaining
-		var before_loop = Time.get_ticks_usec()
 		var rand_node = node_arr[randi_range(start_index, end_index)]
 		var rand_option_index = randi_range(0, rand_node.num_options - 1)
 		var rand_option
@@ -272,10 +255,6 @@ func generate_biome_map():
 					rand_node.options = rand_option
 					break;
 				rand_option_index -= 1
-		timer0 += Time.get_ticks_usec() - before_loop
-		print(node_arr_indices)
-		update_arr_indices(rand_node.num_options, 1)
-		print(node_arr_indices)
 		rand_node.num_options = 1
 		num_uncollapsed_nodes -= 1
 		
@@ -291,25 +270,21 @@ func generate_biome_map():
 					if x >= 0 && x <= WIDTH:
 						var old = node_mat[x][y0 - i].num_options
 						node_mat[x][y0 - i].limit_options(allowed_biomes)
-						update_arr_indices(old, node_mat[x][y0 - i].num_options)
 			if (y0 + i) <= HEIGHT:
 				for x in range(x0 - i, x0 + i):
 					if x >= 0 && x <= WIDTH:
 						var old = node_mat[x][y0 - i].num_options
 						node_mat[x][y0 + i].limit_options(allowed_biomes)
-						update_arr_indices(old, node_mat[x][y0 - i].num_options)
 			if (x0 - i) >= 0:
 				for y in range(y0 - i, y0 + i):
 					if y >= 0 && y <= HEIGHT:
 						var old = node_mat[x0 - i][y].num_options
 						node_mat[x0 - i][y].limit_options(allowed_biomes)
-						update_arr_indices(old, node_mat[x0 - i][y].num_options)
 			if (x0 + i) <= WIDTH:
 				for y in range(y0 - i, y0 + i):
 					if y >= 0 && y <= HEIGHT:
 						var old = node_mat[x0 + i][y].num_options
 						node_mat[x0 + i][y].limit_options(allowed_biomes)
-						update_arr_indices(old, node_mat[x0 + i][y].num_options)
 	
 	for x in range(WIDTH + 1):
 		for y in range(HEIGHT + 1):
