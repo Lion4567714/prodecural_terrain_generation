@@ -1,7 +1,7 @@
 extends MeshInstance3D
 
-const WIDTH = 150
-const HEIGHT = 150
+const WIDTH = 50
+const HEIGHT = 50
 const CELL_SIZE = 2.0
 #const CON_KERNEL = [[-1, -1, -1],
 #					[-1,  8, -1],
@@ -23,11 +23,13 @@ const FEATURE_SENSITIVITY = 0.5
 const BIOME_BLEND = 3
 
 const BIOME = {
-	MOUNTAINS = 0b001,
-	PLAINS = 0b010,
-	OCEANS = 0b100
+	HIGH_MOUNTAINS = 0b00001,
+	MOUNTAINS = 0b00010,
+	PLAINS = 0b00100,
+	OCEANS = 0b01000,
+	DEEP_OCEANS = 0b10000
 }
-const HAMMING = [0, 1, 1, 2, 1, 2, 2, 3]
+const HAMMING = [0, 1, 1, 2, 1, 2, 2, 3, 1, 2, 2, 3, 2, 3, 3, 4, 1, 2, 2, 3, 2, 3, 3, 4, 2, 3, 3, 4, 3, 4, 4, 5]
 
 var last_update_time
 var biome_map
@@ -101,7 +103,11 @@ func _ready():
 			
 			if mdt.get_vertex(faceVertex)[1] == 0:
 				colors.push_back(Color(255, 0, 0, 1))
+			if mdt.get_vertex(faceVertex)[1] == 0.25:
+				colors.push_back(Color(255, 0, 255, 1))
 			if mdt.get_vertex(faceVertex)[1] == 0.5:
+				colors.push_back(Color(255, 255, 0, 1))
+			if mdt.get_vertex(faceVertex)[1] == 0.75:
 				colors.push_back(Color(0, 255, 0, 1))
 			if mdt.get_vertex(faceVertex)[1] == 1:
 				colors.push_back(Color(0, 0, 255, 1))
@@ -187,7 +193,7 @@ class WFCNode:
 	var options: int
 	var num_options: int
 	
-	func _init(x, y) -> void:
+	func _init(x: int, y: int) -> void:
 		pos.x = x
 		pos.y = y
 		options = 0
@@ -246,7 +252,8 @@ func generate_biome_map():
 				break
 		
 		# Collapse vertex
-		var rand_option_index = randi_range(0, rand_node.num_options - 1)
+		#var rand_option_index = randi_range(0, rand_node.num_options - 1)
+		var rand_option_index = randi_range(0, 100) % (rand_node.num_options)
 		var rand_option
 		for i in range(BIOME.size()):
 			if (1 << i) & rand_node.options > 0:
@@ -263,7 +270,7 @@ func generate_biome_map():
 		# Update surround nodes
 		var x0 = rand_node.pos.x
 		var y0 = rand_node.pos.y
-		for i in range(1, BIOME.size()):
+		for i in range(1, BIOME.size() - 1):
 			rand_option |= rand_option >> 1
 			rand_option |= rand_option << 1
 			if y0 - i >= 0:
@@ -294,15 +301,19 @@ func random_height(x, y):
 	var height = 0
 	
 	match biome_map[x][y]:
-		BIOME.MOUNTAINS:
+		BIOME.HIGH_MOUNTAINS:
 			height = 1
+		BIOME.MOUNTAINS:
+			height = 0.75
 			#height = 100 * noise.get_noise_2d(x, y) + 5
 		BIOME.PLAINS:
 			height = 0.5
 			#height = 50 * noise.get_noise_2d(x, y)
 		BIOME.OCEANS:
-			height = 0
+			height = 0.25
 			#height = 10 * noise.get_noise_2d(x, y) - 5
+		BIOME.DEEP_OCEANS:
+			height = 0
 	
 	if height < -20:
 		height = -20
