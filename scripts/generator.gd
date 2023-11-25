@@ -1,7 +1,7 @@
 extends MeshInstance3D
 
-const WIDTH = 300
-const HEIGHT = 300
+const WIDTH = 20
+const HEIGHT = 20
 const CELL_SIZE = 2.0
 #const CON_KERNEL = [[-1, -1, -1],
 #					[-1,  8, -1],
@@ -22,9 +22,12 @@ const CON_KERNEL = [[ 0, -1,  0],
 const FEATURE_SENSITIVITY = 0.5
 const BIOME_BLEND = 3
 
-const MOUNTAINS = 0
-const PLAINS = 1
-const OCEANS = 2
+const BIOME = {
+	MOUNTAINS = 0b001,
+	PLAINS = 0b010,
+	OCEANS = 0b100
+}
+const HAMMING = [0, 1, 1, 2, 1, 2, 2, 3]
 
 var last_update_time
 var biome_map
@@ -32,6 +35,7 @@ var noise
 var height_map
 var feature_map
 var feature_threshold
+
 
 # Called when the node enters the scene tree for the first time.
 func _ready():
@@ -71,7 +75,7 @@ func _ready():
 	feature_threshold = sum * FEATURE_SENSITIVITY
 	
 	generate_feature_map()
-	smooth_height_map()
+	#smooth_height_map()
 	
 	# Apply noise to all vertices
 	var mesh_vertices = PackedVector3Array()
@@ -95,14 +99,21 @@ func _ready():
 			vertices.push_back(mdt.get_vertex(faceVertex))
 			uvs.push_back(mdt.get_vertex_uv(faceVertex))
 			
-			if feature_map[(int)(mdt.get_vertex(faceVertex)[2] / CELL_SIZE)][(int)(mdt.get_vertex(faceVertex)[0] / CELL_SIZE)] > feature_threshold:
-				colors.push_back(Color(128, 0, 128, 1))
-			elif mdt.get_vertex(faceVertex)[1] > 20:
-				colors.push_back(Color(255, 255, 255, 1))
-			elif mdt.get_vertex(faceVertex)[1] <= -20:
-				colors.push_back(Color(0, 0, 255, 1))
-			else:			
+			if mdt.get_vertex(faceVertex)[1] == 0:
+				colors.push_back(Color(255, 0, 0, 1))
+			if mdt.get_vertex(faceVertex)[1] == 0.5:
 				colors.push_back(Color(0, 255, 0, 1))
+			if mdt.get_vertex(faceVertex)[1] == 1:
+				colors.push_back(Color(0, 0, 255, 1))
+			
+			#if feature_map[(int)(mdt.get_vertex(faceVertex)[2] / CELL_SIZE)][(int)(mdt.get_vertex(faceVertex)[0] / CELL_SIZE)] > feature_threshold:
+			#	colors.push_back(Color(128, 0, 128, 1))
+			#elif mdt.get_vertex(faceVertex)[1] > 20:
+			#	colors.push_back(Color(255, 255, 255, 1))
+			#elif mdt.get_vertex(faceVertex)[1] <= -20:
+			#	colors.push_back(Color(0, 0, 255, 1))
+			#else:			
+			#	colors.push_back(Color(0, 255, 0, 1))
 				
 			normals.push_back(normal)
 
@@ -170,20 +181,111 @@ func generate_grid():
 	return arr_mesh
 
 
+class WFCNode:
+	var pos: Vector2
+	var options: int
+	var num_options: int
+	
+	func _init(x, y) -> void:
+		pos.x = x
+		pos.y = y
+		options = 0
+		for biome in BIOME.values():
+			options += biome
+		num_options = BIOME.size()
+	
+	func limit_options(limit):
+		options &= limit
+		num_options = HAMMING[options]
+	
+	static func sort(a: WFCNode, b: WFCNode) -> bool:
+		return a.num_options < b.num_options
+	
+	func _to_string():
+		return "WFCNode: pos (" + str(pos.x) + ", " + str(pos.y) + "), num_options = " + str(num_options)
+
+
 func generate_biome_map():
 	var map = []
+	var node_mat = []
+	var node_arr = []
+	var num_uncollapsed_nodes = (WIDTH + 1) * (HEIGHT + 1)
+	var node_arr_indices = []
+	for i in range(BIOME.size()):
+		node_arr_indices.append(0)
+	for x in range(WIDTH + 1):
+		var arr1 = []
+		arr1.resize(HEIGHT + 1)
+		map.append(arr1)
+		var arr2 = []
+		arr2.resize(HEIGHT + 1)
+		node_mat.append(arr2)
+		for y in range(HEIGHT + 1):
+			node_mat[x][y] = WFCNode.new(x, y)
+			node_arr.append(node_mat[x][y])
+	
+	while num_uncollapsed_nodes > 0:
+		# Sort array based on how many options each node has remaining
+		node_arr.sort_custom(WFCNode.sort)
+		print(num_uncollapsed_nodes)
+		
+		# Find bounds of node_arr of nodes with minimal options remaining
+		# Minimal options remaining > 1, 1 means the node is already collapsed
+		var min_options = -1
+		var start_index
+		var end_index
+		for i in range(node_arr.size()):
+			if node_arr[i].num_options > 1:
+				if min_options == -1:
+					min_options = node_arr[i].num_options
+					start_index = i 
+				elif node_arr[i].num_options > min_options:
+					end_index = i - 1
+					break
+		if end_index == null:
+			end_index = node_arr.size() - 1
+		
+		# Collapse random vertex with minimal options remaining
+		var rand_node_index = randi_range(start_index, end_index)
+		var rand_option_index = randi_range(0, node_arr[rand_node_index].num_options - 1)
+		var rand_option
+		for i in range(BIOME.size()):
+			if (1 << i) & node_arr[rand_node_index].options > 0:
+				if rand_option_index == 0:
+					rand_option = 1 << i 
+					node_arr[rand_node_index].options = rand_option
+					break;
+				rand_option_index -= 1
+		node_arr[rand_node_index].num_options = 1
+		num_uncollapsed_nodes -= 1
+		
+		# Update surround nodes
+		var x0 = node_arr[rand_node_index].pos.x
+		var y0 = node_arr[rand_node_index].pos.y
+		var allowed_biomes = rand_option
+		for i in range(1, BIOME.size()):
+			allowed_biomes |= allowed_biomes >> 1
+			allowed_biomes |= allowed_biomes << 1
+			if (y0 - i) >= 0:
+				for x in range(x0 - i, x0 + i):
+					if x >= 0 && x <= WIDTH:
+						node_mat[x][y0 - i].limit_options(allowed_biomes)
+			if (y0 + i) <= HEIGHT:
+				for x in range(x0 - i, x0 + i):
+					if x >= 0 && x <= WIDTH:
+						node_mat[x][y0 + i].limit_options(allowed_biomes)
+			if (x0 - i) >= 0:
+				for y in range(y0 - i, y0 + i):
+					if y >= 0 && y <= HEIGHT:
+						node_mat[x0 - i][y].limit_options(allowed_biomes)
+			if (x0 + i) <= WIDTH:
+				for y in range(y0 - i, y0 + i):
+					if y >= 0 && y <= HEIGHT:
+						node_mat[x0 + i][y].limit_options(allowed_biomes)
 	
 	for x in range(WIDTH + 1):
-		var col = []
-		col.resize(HEIGHT + 1)
-		map.append(col)
 		for y in range(HEIGHT + 1):
-			if x > 2 * WIDTH / 3:
-				map[x][y] = MOUNTAINS
-			elif x > WIDTH / 3:
-				map[x][y] = PLAINS
-			else:
-				map[x][y] = OCEANS
+			map[x][y] = node_mat[x][y].options
 	
 	return map
 
@@ -192,12 +294,15 @@ func random_height(x, y):
 	var height = 0
 	
 	match biome_map[x][y]:
-		MOUNTAINS:
-			height = 100 * noise.get_noise_2d(x, y) + 5
-		PLAINS:
-			height = 50 * noise.get_noise_2d(x, y)
-		OCEANS:
-			height = 10 * noise.get_noise_2d(x, y) - 5
+		BIOME.MOUNTAINS:
+			height = 1
+			#height = 100 * noise.get_noise_2d(x, y) + 5
+		BIOME.PLAINS:
+			height = 0.5
+			#height = 50 * noise.get_noise_2d(x, y)
+		BIOME.OCEANS:
+			height = 0
+			#height = 10 * noise.get_noise_2d(x, y) - 5
 	
 	if height < -20:
 		height = -20
