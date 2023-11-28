@@ -1,7 +1,7 @@
 extends MeshInstance3D
 
-const WIDTH = 50
-const HEIGHT = 50
+const WIDTH = 100
+const HEIGHT = 100
 const CELL_SIZE = 2.0
 #const CON_KERNEL = [[-1, -1, -1],
 #					[-1,  8, -1],
@@ -20,16 +20,20 @@ const CON_KERNEL = [[ 0, -1,  0],
 #					[0, 0, -1, 0, 0],
 #					[0, 0, -1, 0, 0]]
 const FEATURE_SENSITIVITY = 0.5
-const BIOME_BLEND = 3
+const BIOME_BLEND = 5
 
+const HAMMING = [0, 1, 1, 2, 1, 2, 2, 3, 1, 2, 2, 3, 2, 3, 3, 4, 1, 2, 2, 3, 2, 3, 3, 4, 2, 3, 3, 4, 3, 4, 4, 5]
 const BIOME = {
 	HIGH_MOUNTAINS = 0b00001,
 	MOUNTAINS = 0b00010,
 	PLAINS = 0b00100,
-	OCEANS = 0b01000,
-	DEEP_OCEANS = 0b10000
+	BEACHS = 0b01000,
+	OCEANS = 0b10000
 }
-const HAMMING = [0, 1, 1, 2, 1, 2, 2, 3, 1, 2, 2, 3, 2, 3, 3, 4, 1, 2, 2, 3, 2, 3, 3, 4, 2, 3, 3, 4, 3, 4, 4, 5]
+const SNOW = Color(255, 255, 255, 1)
+const GRASS = Color(0, 255, 0, 1)
+const SAND = Color(255, 240, 0, 1)
+const WATER = Color(0, 0, 255, 1)
 
 var last_update_time
 var biome_map
@@ -41,21 +45,37 @@ var feature_threshold
 
 # Called when the node enters the scene tree for the first time.
 func _ready():
-	last_update_time = Time.get_ticks_msec()
+	generate_mesh()
+
+
+# Called every frame. 'delta' is the elapsed time since the previous frame.
+func _process(_delta):
+	pass
+
+
+func _input(_event):
+	if Input.is_key_pressed(KEY_R):
+		generate_mesh()
+		
+
+func generate_mesh():
+	print("-----")
+	print("Starting new mesh generation...")
+	last_update_time = Time.get_ticks_usec()	# Reset timer for new mesh generation
 	
-	print_status("Generating biome map")
-	biome_map = generate_biome_map()
+	#biome_map = generate_biome_map()
+	biome_map = generate_biome_map_test()
+	print_status("Generated biome map")
 	
-	print_status("Generating grid")
 	var my_mesh = generate_grid()
+	print_status("Generated grid")
 	
-	print_status("Creating MeshDataTool from surface")
 	var mdt = MeshDataTool.new()
 	if not mdt.create_from_surface(my_mesh, 0) == OK:
 		print("ERROR: create_from_surface()")
 		return
+	print_status("Created MeshDataTool from surface")
 	
-	print_status("Adding randomization")
 	noise = FastNoiseLite.new()
 	noise.set_noise_type(FastNoiseLite.TYPE_PERLIN)
 	noise.set_seed(Time.get_datetime_dict_from_system().second)
@@ -66,9 +86,9 @@ func _ready():
 		col.resize(WIDTH + 1)
 		height_map.append(col)
 		for y in range(HEIGHT + 1):
-			height_map[x][y] = random_height(x, y)
+			height_map[x][y] = random_height(x, y, biome_map[x][y])
+	print_status("Added randomization")
 	
-	print_status("Generating feature map and smoothing")
 	var sum = 0
 	for x in range(CON_KERNEL.size()):
 		for y in range(CON_KERNEL.size()):
@@ -77,18 +97,19 @@ func _ready():
 	feature_threshold = sum * FEATURE_SENSITIVITY
 	
 	generate_feature_map()
+	blend_biomes(BIOME_BLEND)
 	#smooth_height_map()
+	print_status("Generated feature map and smoothing")
 	
-	# Apply noise to all vertices
-	var mesh_vertices = PackedVector3Array()
+	var color_map = generate_colors()
+	print_status("Generated color map")
+	
+	# Apply heightmap to mesh
 	for i in range(mdt.get_vertex_count()):
-		mesh_vertices.append(mdt.get_vertex(i))
-		
-		mesh_vertices[i][1] = height_map[i / (WIDTH + 1)][i % (WIDTH + 1)]
-		
-		mdt.set_vertex(i, mesh_vertices[i])
+		var vertex: Vector3 = mdt.get_vertex(i)
+		vertex[1] = height_map[i / (WIDTH + 1)][i % (WIDTH + 1)]
+		mdt.set_vertex(i, vertex)
 	
-	print_status("Generating ArrayMesh")
 	var vertices = PackedVector3Array()
 	var normals = PackedVector3Array()
 	var colors = PackedColorArray()
@@ -98,29 +119,12 @@ func _ready():
 		var normal = mdt.get_face_normal(face)
 		for vertex in range(0, 3):
 			var faceVertex = mdt.get_face_vertex(face, vertex)
+			var x = (int)(mdt.get_vertex(faceVertex)[2] / CELL_SIZE)
+			var y = (int)(mdt.get_vertex(faceVertex)[0] / CELL_SIZE)
+			
 			vertices.push_back(mdt.get_vertex(faceVertex))
 			uvs.push_back(mdt.get_vertex_uv(faceVertex))
-			
-			if mdt.get_vertex(faceVertex)[1] == 0:
-				colors.push_back(Color(255, 0, 0, 1))
-			if mdt.get_vertex(faceVertex)[1] == 0.25:
-				colors.push_back(Color(255, 0, 255, 1))
-			if mdt.get_vertex(faceVertex)[1] == 0.5:
-				colors.push_back(Color(255, 255, 0, 1))
-			if mdt.get_vertex(faceVertex)[1] == 0.75:
-				colors.push_back(Color(0, 255, 0, 1))
-			if mdt.get_vertex(faceVertex)[1] == 1:
-				colors.push_back(Color(0, 0, 255, 1))
-			
-			#if feature_map[(int)(mdt.get_vertex(faceVertex)[2] / CELL_SIZE)][(int)(mdt.get_vertex(faceVertex)[0] / CELL_SIZE)] > feature_threshold:
-			#	colors.push_back(Color(128, 0, 128, 1))
-			#elif mdt.get_vertex(faceVertex)[1] > 20:
-			#	colors.push_back(Color(255, 255, 255, 1))
-			#elif mdt.get_vertex(faceVertex)[1] <= -20:
-			#	colors.push_back(Color(0, 0, 255, 1))
-			#else:			
-			#	colors.push_back(Color(0, 255, 0, 1))
-				
+			colors.push_back(color_map[x][y])			
 			normals.push_back(normal)
 
 	var arrays = []
@@ -134,24 +138,17 @@ func _ready():
 	arr_mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
 
 	self.mesh = arr_mesh
+	print_status("Generated final mesh")
 	
-	print_status("Fixing material")
-	var mat = StandardMaterial3D.new();
+	var mat = StandardMaterial3D.new()
 	mat.vertex_color_use_as_albedo = true
 	mesh.surface_set_material(0, mat)
-	
 	print_status("Done")
-	
-	return
-
-
-# Called every frame. 'delta' is the elapsed time since the previous frame.
-func _process(_delta):
-	pass
 
 
 func print_status(message):
-	print("(", (float)(Time.get_ticks_usec() - last_update_time) / 1_000_000, " secs) ", message)
+	var string = "(%6.3f secs) %s"
+	print(string % [(float)(Time.get_ticks_usec() - last_update_time) / 1_000_000, message])
 	last_update_time = Time.get_ticks_usec()
 
 
@@ -297,26 +294,43 @@ func generate_biome_map():
 	return map
 
 
-func random_height(x, y):
+func generate_biome_map_test():
+	var map = []
+	for x in range(WIDTH + 1):
+		var col = []
+		col.resize(HEIGHT + 1)
+		map.append(col)
+		for y in range(HEIGHT + 1):
+			if y < 1 * (HEIGHT + 1) / BIOME.size():
+				map[x][y] = BIOME.values()[0]
+			elif y < 2 * (HEIGHT + 1) / BIOME.size():
+				map[x][y] = BIOME.values()[1]
+			elif y < 3 * (HEIGHT + 1) / BIOME.size():
+				map[x][y] = BIOME.values()[2]
+			elif y < 4 * (HEIGHT + 1) / BIOME.size():
+				map[x][y] = BIOME.values()[3]
+			elif y < 5 * (HEIGHT + 1) / BIOME.size():
+				map[x][y] = BIOME.values()[4]
+	return map
+
+
+func random_height(x, y, biome):
 	var height = 0
 	
-	match biome_map[x][y]:
+	match biome:
 		BIOME.HIGH_MOUNTAINS:
-			height = 1
+			height = 30 + 150 * noise.get_noise_2d(3 * x, 3 * y)
 		BIOME.MOUNTAINS:
-			height = 0.75
-			#height = 100 * noise.get_noise_2d(x, y) + 5
+			height = 20 + 100 * noise.get_noise_2d(1.5 * x, 1.5 * y)
 		BIOME.PLAINS:
-			height = 0.5
-			#height = 50 * noise.get_noise_2d(x, y)
+			height = 10 + 50 * noise.get_noise_2d(x, y)
+		BIOME.BEACHS:
+			height = 5 + 12 * noise.get_noise_2d(15 * x, y)
 		BIOME.OCEANS:
-			height = 0.25
-			#height = 10 * noise.get_noise_2d(x, y) - 5
-		BIOME.DEEP_OCEANS:
-			height = 0
+			height = -3 + 5 * noise.get_noise_2d(10 * x, 5 * y)
 	
-	if height < -20:
-		height = -20
+	if height < 0:
+		height = 0
 	
 	return height
 	
@@ -344,6 +358,45 @@ func convolve(kernel, x, y):
 	
 	return sum
 
+
+func blend_biomes(radius: int) -> void:
+	var new_height_map = []
+	for x in range(WIDTH + 1):
+		var col = []
+		col.resize(HEIGHT + 1)
+		new_height_map.append(col)
+	
+	for x0 in range(1, WIDTH):
+		for y0 in range(1, HEIGHT):
+			var num = 0
+			var sum = 0
+			
+			for x1 in range(x0 - radius, x0 + radius + 1):
+				for y1 in range(y0 - radius, y0 + radius + 1):
+					if x1 < 0 || y1 < 0 || x1 > WIDTH || y1 > HEIGHT:
+						continue
+					var dist = abs(x0 - x1) + abs(y0 - y1)
+					if dist > radius:
+						continue
+					num += 1
+					sum += height_map[x1][y1]
+			
+			var mean = sum / num
+			
+			for x1 in range(x0 - radius, x0 + radius + 1):
+				for y1 in range(y0 - radius, y0 + radius + 1):
+					if x1 < 0 || y1 < 0 || x1 > WIDTH || y1 > HEIGHT:
+						continue
+					var dist = abs(x0 - x1) + abs(y0 - y1)
+					if dist > radius:
+						continue
+					new_height_map[x1][y1] = mean + (height_map[x1][y1] - height_map[x0][y1]) * pow(0.75, dist)
+	
+	for x in range(WIDTH + 1):
+		for y in range(HEIGHT + 1):
+			if new_height_map[x][y] != null:
+				height_map[x][y] = new_height_map[x][y]
+			
 
 func smooth_height_map():
 	var new_height_map = []
@@ -401,3 +454,37 @@ func smooth_at_coords(new_height_map, x, y):
 			else:
 				var z_score = (height_map[i][j] - mean) / std_dev
 				new_height_map[i][j] -= std_dev * tanh(z_score / 4)
+
+
+func generate_colors():
+	var color_map = []
+	
+	for x in range(WIDTH + 1):
+		var col = []
+		col.resize(HEIGHT + 1)
+		color_map.append(col)
+		
+		for y in range(HEIGHT + 1):
+			if height_map[x][y] > 35:
+				color_map[x][y] = SNOW
+			elif biome_map[x][y] == BIOME.BEACHS:
+				color_map[x][y] = SAND
+			elif height_map[x][y] > 0 && biome_map[x][y] == BIOME.OCEANS:
+				color_map[x][y] = SAND
+			elif height_map[x][y] == 0:
+				color_map[x][y] = WATER
+			else:
+				color_map[x][y] = GRASS
+				
+			#if mdt.get_vertex(faceVertex)[1] == 0:
+			#	colors.push_back(Color(255, 0, 0, 1))
+			#if mdt.get_vertex(faceVertex)[1] == 0.25:
+			#	colors.push_back(Color(255, 0, 255, 1))
+			#if mdt.get_vertex(faceVertex)[1] == 0.5:
+			#	colors.push_back(Color(255, 255, 0, 1))
+			#if mdt.get_vertex(faceVertex)[1] == 0.75:
+			#	colors.push_back(Color(0, 255, 0, 1))
+			#if mdt.get_vertex(faceVertex)[1] == 1:
+			#	colors.push_back(Color(0, 0, 255, 1))
+	
+	return color_map
