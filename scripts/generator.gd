@@ -2,10 +2,10 @@ extends MeshInstance3D
 
 const TEST_BIOME = false
 
-const BIOME_VIEW = true
+const BIOME_VIEW = false
 
-const WIDTH = 100
-const HEIGHT = 100
+const WIDTH = 150
+const HEIGHT = 150
 const CELL_SIZE = 2.0
 #const CON_KERNEL = [[-1, -1, -1],
 #					[-1,  8, -1],
@@ -106,7 +106,7 @@ func generate_mesh():
 	
 	generate_feature_map()
 	blend_biomes(BIOME_BLEND)
-	#smooth_height_map()
+	smooth_height_map()
 	print_status("Generated feature map and smoothing")
 	
 	var color_map = generate_colors()
@@ -218,8 +218,8 @@ class WFCNode:
 		return a.num_options < b.num_options
 	
 	func _to_string() -> String:
-		#return str(options)
-		return "WFCNode: pos (" + str(pos.x) + ", " + str(pos.y) + "), num_options = " + str(num_options)
+		return str(options)
+		#return "WFCNode: pos (" + str(pos.x) + ", " + str(pos.y) + "), num_options = " + str(num_options)
 
 
 func limit_options_of_node(node: WFCNode, limit: int, arrays: Array) -> void:
@@ -259,17 +259,52 @@ func generate_biome_map():
 			node_mat[x][y] = WFCNode.new(x, y)
 			node_arrs[BIOME.size() - 1].append(node_mat[x][y])
 	
+	var num_starting_biomes = 5
+	
 	while num_uncollapsed_nodes > 0:
 		# Find the first array with > 0 nodes, choose a random node within that array
-		var rand_node
-		for i in range(1, node_arrs.size()):
-			if node_arrs[i].size() > 0:
-				rand_node = node_arrs[i][randi_range(0, node_arrs[i].size() - 1)]
-				break
-				
-		if !biome_dict.has(rand_node.options):
-			biome_dict[rand_node.options] = 0
-		biome_dict[rand_node.options] += 1
+		var rand_node = null
+		
+		"""
+		if num_starting_biomes >= 0:
+			if num_starting_biomes == 0:
+				num_starting_biomes -= 1
+			var string = ""
+			for x in range(WIDTH + 1):
+				for y in range(HEIGHT + 1):
+					string += str(node_mat[x][y].options) + " "
+				string += "\n\n"
+			print(string)
+			print()
+			print()
+			
+			string = ""
+			for x in range(WIDTH + 1):
+				for y in range(HEIGHT + 1):
+					string += str(node_mat[x][y].num_options) + " "
+				string += "\n\n"
+			print(string)
+		"""
+		
+		if num_starting_biomes > 0:
+			var index = randi_range(0, node_arrs[BIOME.size() - 1].size() - 1)
+			rand_node = node_arrs[BIOME.size() - 1][index]
+			#print(index)
+			#print(rand_node)
+			num_starting_biomes -= 1
+		else:		
+			for i in range(1, node_arrs.size()):
+				#print("i: ", i)
+				#print("size ", node_arrs[i].size())
+				if node_arrs[i].size() > 0:
+					rand_node = node_arrs[i][randi_range(0, node_arrs[i].size() - 1)]
+					break
+		if rand_node == null:
+			break
+		
+		#if !biome_dict.has(rand_node.options):
+		#	biome_dict[rand_node.options] = 0
+		#biome_dict[rand_node.options] += 1
 		
 		# Collapse vertex
 		var rand_option_index = randi_range(0, rand_node.num_options - 1)
@@ -292,6 +327,7 @@ func generate_biome_map():
 		var x0 = rand_node.pos.x
 		var y0 = rand_node.pos.y
 		for i in range(1, BIOME.size() - 1):
+		#for i in range(1, 2):
 			rand_option |= rand_option >> 1
 			rand_option |= rand_option << 1
 			if y0 - i >= 0:
