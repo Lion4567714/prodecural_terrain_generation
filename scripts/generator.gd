@@ -1,5 +1,9 @@
 extends MeshInstance3D
 
+const TEST_BIOME = false
+
+const BIOME_VIEW = true
+
 const WIDTH = 100
 const HEIGHT = 100
 const CELL_SIZE = 2.0
@@ -37,6 +41,8 @@ const WATER = Color(0, 0, 255, 1)
 
 var last_update_time
 var biome_map
+var biome_size
+var biome_dict
 var noise
 var height_map
 var feature_map
@@ -63,8 +69,10 @@ func generate_mesh():
 	print("Starting new mesh generation...")
 	last_update_time = Time.get_ticks_usec()	# Reset timer for new mesh generation
 	
-	#biome_map = generate_biome_map()
-	biome_map = generate_biome_map_test()
+	if !TEST_BIOME:
+		biome_map = generate_biome_map()
+	else:
+		biome_map = generate_biome_map_test()
 	print_status("Generated biome map")
 	
 	var my_mesh = generate_grid()
@@ -144,6 +152,9 @@ func generate_mesh():
 	mat.vertex_color_use_as_albedo = true
 	mesh.surface_set_material(0, mat)
 	print_status("Done")
+	
+	print(biome_size)
+	print(biome_dict)
 
 
 func print_status(message):
@@ -222,6 +233,14 @@ func limit_options_of_node(node: WFCNode, limit: int, arrays: Array) -> void:
 
 
 func generate_biome_map():
+	#randomize()
+	
+	biome_size = []
+	biome_size.resize(BIOME.size())
+	for i in range(BIOME.size()):
+		biome_size[i] = 0
+	biome_dict = {}
+	
 	var map = []
 	var node_mat = []
 	var node_arrs = []	# Array of arrays, index cooresponds to num remaining options + 1
@@ -247,18 +266,23 @@ func generate_biome_map():
 			if node_arrs[i].size() > 0:
 				rand_node = node_arrs[i][randi_range(0, node_arrs[i].size() - 1)]
 				break
+				
+		if !biome_dict.has(rand_node.options):
+			biome_dict[rand_node.options] = 0
+		biome_dict[rand_node.options] += 1
 		
 		# Collapse vertex
-		#var rand_option_index = randi_range(0, rand_node.num_options - 1)
-		var rand_option_index = randi_range(0, 100) % (rand_node.num_options)
+		var rand_option_index = randi_range(0, rand_node.num_options - 1)
+		#var rand_option_index = randi_range(0, 100) % (rand_node.num_options)
 		var rand_option
 		for i in range(BIOME.size()):
 			if (1 << i) & rand_node.options > 0:
 				if rand_option_index == 0:
 					rand_option = 1 << i 
-					rand_node.options = rand_option
 					break;
 				rand_option_index -= 1
+		biome_size[log(rand_option)] += 1 ###############################
+		rand_node.options = rand_option
 		node_arrs[rand_node.num_options - 1].erase(rand_node)
 		node_arrs[0].append(rand_node)
 		rand_node.num_options = 1
@@ -465,26 +489,27 @@ func generate_colors():
 		color_map.append(col)
 		
 		for y in range(HEIGHT + 1):
-			if height_map[x][y] > 35:
-				color_map[x][y] = SNOW
-			elif biome_map[x][y] == BIOME.BEACHS:
-				color_map[x][y] = SAND
-			elif height_map[x][y] > 0 && biome_map[x][y] == BIOME.OCEANS:
-				color_map[x][y] = SAND
-			elif height_map[x][y] == 0:
-				color_map[x][y] = WATER
-			else:
-				color_map[x][y] = GRASS
-				
-			#if mdt.get_vertex(faceVertex)[1] == 0:
-			#	colors.push_back(Color(255, 0, 0, 1))
-			#if mdt.get_vertex(faceVertex)[1] == 0.25:
-			#	colors.push_back(Color(255, 0, 255, 1))
-			#if mdt.get_vertex(faceVertex)[1] == 0.5:
-			#	colors.push_back(Color(255, 255, 0, 1))
-			#if mdt.get_vertex(faceVertex)[1] == 0.75:
-			#	colors.push_back(Color(0, 255, 0, 1))
-			#if mdt.get_vertex(faceVertex)[1] == 1:
-			#	colors.push_back(Color(0, 0, 255, 1))
+			if !BIOME_VIEW:
+				if height_map[x][y] > 35:
+					color_map[x][y] = SNOW
+				elif biome_map[x][y] == BIOME.BEACHS:
+					color_map[x][y] = SAND
+				elif height_map[x][y] > 0 && biome_map[x][y] == BIOME.OCEANS:
+					color_map[x][y] = SAND
+				elif height_map[x][y] == 0:
+					color_map[x][y] = WATER
+				else:
+					color_map[x][y] = GRASS
+			else:		
+				if biome_map[x][y] == BIOME.HIGH_MOUNTAINS:
+					color_map[x][y] = Color(255, 0, 0, 1)
+				elif biome_map[x][y] == BIOME.MOUNTAINS:
+					color_map[x][y] = Color(255, 255, 0, 1)
+				elif biome_map[x][y] == BIOME.PLAINS:
+					color_map[x][y] = Color(0, 255, 0, 1)
+				elif biome_map[x][y] == BIOME.BEACHS:
+					color_map[x][y] = Color(0, 255, 255, 1)
+				elif biome_map[x][y] == BIOME.OCEANS:
+					color_map[x][y] = Color(0, 0, 255, 1) 
 	
 	return color_map
