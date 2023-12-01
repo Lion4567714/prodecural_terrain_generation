@@ -1,12 +1,8 @@
-[gd_scene load_steps=6 format=3 uid="uid://dltnb0relog3g"]
+[gd_scene load_steps=4 format=3 uid="uid://dltnb0relog3g"]
 
 [ext_resource type="ArrayMesh" uid="uid://blgcboj8owaih" path="res://blender_files/mesh2.obj" id="1_k7w08"]
 [ext_resource type="Script" path="res://scripts/generator.gd" id="2_pynln"]
 [ext_resource type="Script" path="res://scripts/camera_controller.gd" id="3_jos13"]
-
-[sub_resource type="WorldBoundaryShape3D" id="WorldBoundaryShape3D_qwxnx"]
-
-[sub_resource type="CylinderMesh" id="CylinderMesh_2bs43"]
 
 [node name="Node3D" type="Node3D"]
 
@@ -20,13 +16,3 @@ script = ExtResource("3_jos13")
 
 [node name="DirectionalLight3D" type="DirectionalLight3D" parent="."]
 transform = Transform3D(-0.104846, 0.700573, -0.705836, 0.102935, 0.713581, 0.69297, 0.989147, 1.47394e-08, -0.146929, -54.4205, 41.9618, 0)
-
-[node name="Area3D" type="Area3D" parent="."]
-transform = Transform3D(10, 0, 0, 0, 10, 0, 0, 0, 10, 0, 0, 0)
-
-[node name="CollisionShape3D" type="CollisionShape3D" parent="Area3D"]
-shape = SubResource("WorldBoundaryShape3D_qwxnx")
-
-[node name="MeshInstance3D2" type="MeshInstance3D" parent="."]
-transform = Transform3D(10, 0, 0, 0, 10, 0, 0, 0, 10, 0, 20, 0)
-mesh = SubResource("CylinderMesh_2bs43")

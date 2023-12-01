@@ -4,8 +4,8 @@ const TEST_BIOME = false
 
 const BIOME_VIEW = false
 
-const WIDTH = 150
-const HEIGHT = 150
+const WIDTH = 50
+const HEIGHT = 50
 const CELL_SIZE = 2.0
 #const CON_KERNEL = [[-1, -1, -1],
 #					[-1,  8, -1],
@@ -72,13 +72,25 @@ func _input(event):
 			print(get_viewport())
 			print(get_viewport().get_mouse_position())
 			var mouse_pos = get_viewport().get_mouse_position()
-			var camera = get_node("Camera3D")
+			var camera = get_viewport().get_camera_3d()
 			var from = camera.project_ray_origin(mouse_pos)
 			var to = from + camera.project_ray_normal(mouse_pos) * ray_length
+			print(from)
+			print(to)
 			
-			#var space_state = get_world_3d().get_direct_space_state()
+			var space_state = get_world_3d().get_direct_space_state()
+			#var space_state = get_world_3d().direct_space_state
 			# use global coordinates, not local to node
-			#var result = space_state.intersect_ray( from, to )
+			var params = PhysicsRayQueryParameters3D.new()
+			params.from = from
+			params.to = to
+			params.collide_with_areas = true
+			#params.exclude = []
+			var result = space_state.intersect_ray(params)
+			if result:
+				print("Hit at " + str(result.position))
+			else:
+				print("No hit")
 
 
 func generate_mesh():
@@ -186,7 +198,7 @@ func generate_grid():
 	
 	for y in range(WIDTH + 1):
 		for x in range(HEIGHT + 1):
-			vertices.push_back(Vector3(x * CELL_SIZE, 0, y * CELL_SIZE))
+			vertices.push_back(Vector3((x - (WIDTH + 1) / 2) * CELL_SIZE, 0, (y - (HEIGHT + 1) / 2) * CELL_SIZE))
 	
 	for x in range(WIDTH):
 		for y in range(HEIGHT):
