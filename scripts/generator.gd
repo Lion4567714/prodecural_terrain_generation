@@ -51,7 +51,8 @@ var feature_threshold
 
 # Called when the node enters the scene tree for the first time.
 func _ready():
-	generate_mesh()
+	#generate_mesh()
+	pass
 
 
 # Called every frame. 'delta' is the elapsed time since the previous frame.
@@ -59,10 +60,26 @@ func _process(_delta):
 	pass
 
 
-func _input(_event):
-	if Input.is_key_pressed(KEY_R):
-		generate_mesh()
-		
+func _input(event):
+	if event is InputEventKey and event.pressed:
+		if event.keycode == KEY_R:
+			generate_mesh()
+	elif event is InputEventMouseButton:
+		if event.button_index == MOUSE_BUTTON_LEFT and event.pressed:
+			print("Mouse pressed!")
+			
+			var ray_length = 1000
+			print(get_viewport())
+			print(get_viewport().get_mouse_position())
+			var mouse_pos = get_viewport().get_mouse_position()
+			var camera = get_node("Camera3D")
+			var from = camera.project_ray_origin(mouse_pos)
+			var to = from + camera.project_ray_normal(mouse_pos) * ray_length
+			
+			#var space_state = get_world_3d().get_direct_space_state()
+			# use global coordinates, not local to node
+			#var result = space_state.intersect_ray( from, to )
+
 
 func generate_mesh():
 	print("-----")
