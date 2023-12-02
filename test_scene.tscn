@@ -1,6 +1,5 @@
-[gd_scene load_steps=7 format=3 uid="uid://dltnb0relog3g"]
+[gd_scene load_steps=6 format=3 uid="uid://dltnb0relog3g"]
 
-[ext_resource type="ArrayMesh" uid="uid://blgcboj8owaih" path="res://blender_files/mesh2.obj" id="1_k7w08"]
 [ext_resource type="Script" path="res://scripts/generator.gd" id="2_pynln"]
 [ext_resource type="Script" path="res://scripts/camera_controller.gd" id="3_jos13"]
 [ext_resource type="FontFile" uid="uid://da3avynq8bbnh" path="res://resources/JetBrainsMonoNerdFont-ExtraLight.ttf" id="4_nvtil"]
@@ -11,7 +10,6 @@
 [node name="Node3D" type="Node3D"]
 
 [node name="MeshInstance3D" type="MeshInstance3D" parent="."]
-mesh = ExtResource("1_k7w08")
 script = ExtResource("2_pynln")
 
 [node name="Camera3D" type="Camera3D" parent="."]
@@ -33,11 +31,24 @@ shape = SubResource("BoxShape3D_bvm41")
 offset_left = 27.0
 offset_top = 20.0
 offset_right = 890.0
-offset_bottom = 186.0
+offset_bottom = 81.0
 theme_override_fonts/normal_font = ExtResource("4_nvtil")
 theme_override_fonts/bold_font = ExtResource("5_tq3xq")
 theme_override_font_sizes/normal_font_size = 40
 theme_override_font_sizes/bold_font_size = 40
 bbcode_enabled = true
 text = "Selected Biome: [b]Ocean[/b]"
+fit_content = true
+
+[node name="BrushText" type="RichTextLabel" parent="Canvas"]
+offset_left = 27.0
+offset_top = 80.0
+offset_right = 890.0
+offset_bottom = 141.0
+theme_override_fonts/normal_font = ExtResource("4_nvtil")
+theme_override_fonts/bold_font = ExtResource("5_tq3xq")
+theme_override_font_sizes/normal_font_size = 40
+theme_override_font_sizes/bold_font_size = 40
+bbcode_enabled = true
+text = "Brush Size:     [b]1[/b]"
 fit_content = true

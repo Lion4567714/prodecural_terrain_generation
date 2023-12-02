@@ -5,17 +5,18 @@ var PRINT_STATUS_MESSAGES = true
 var VIEW_BIOME_TEST = false
 var VIEW_BIOME_MAP = false
 var VIEW_HEIGHT_MAP = true
+var VIEW_FEATURE_MAP = false
 var ENABLE_SMOOTHING = true
 
 # Mesh settings
-const WIDTH = 50
-const HEIGHT = 50
+const WIDTH = 75
+const HEIGHT = 75
 const CELL_SIZE = 2.0
 #const CON_KERNEL = [[-1, -1, -1],
 #					[-1,  8, -1],
 #					[-1, -1, -1]]
 const CON_KERNEL = [[ 0, -1,  0],
-					[ 0,  2,  0],
+					[-1,  4, -1],
 					[ 0, -1,  0]]
 #const CON_KERNEL = [[-1, -1, -1, -1, -1],
 #					[-1, -2, -2, -2, -1],
@@ -56,13 +57,13 @@ const RAYCAST_LENGTH = 1000
 var camera: Camera3D
 var collision_area: Area3D
 var biome_text: RichTextLabel
-var selected_biome: int = 0
+var brush_text: RichTextLabel
 
 # Script globals
+var selected_biome: int = 0
+var brush_size: int = 1
 var last_update_time
 var biome_map
-var biome_size
-var biome_dict
 var noise
 var height_map
 var feature_map
@@ -71,11 +72,7 @@ var feature_threshold
 
 # Called when the node enters the scene tree for the first time.
 func _ready():
-	biome_map = []
-	for x in range(WIDTH + 1):
-		var col = []
-		col.resize(HEIGHT + 1)
-		biome_map.append(col)
+	initialize()
 	
 	PRINT_STATUS_MESSAGES = false
 	generate_mesh(true)
@@ -89,16 +86,23 @@ func _ready():
 	biome_text = get_node("/root/Node3D/Canvas/BiomeText")
 	biome_text.text = "Selected Biome: [b]" + BIOME_NAMES[selected_biome] + "[/b]"
 	
+	brush_text = get_node("/root/Node3D/Canvas/BrushText")
+	brush_text.text = "Brush Size:     [b]" + str(brush_size) + "[/b]"
+	
 	print("Controls:")
 	print("WASD+C+Space: camera movement")
 	print("LMB: draw biome")
 	print("Scroll: switch biome type")
-	print("E: regenerate mesh")
+	print("Up/Down: change brush size")
+	print("E: erase mesh")
+	print("R: regenerate mesh")
 	print("T: toggle biome test")
 	print("B: toggle biome map")
 	print("H: toggle height map")
+	print("F: toggle feature map")
 	print("M: toggle status messages")
 	print("O: toggle terrain smoothing")
+	print("-----")
 	
 	pass
 
@@ -110,8 +114,18 @@ func _process(_delta):
 
 func _input(event):
 	if event is InputEventKey and event.pressed:
-		if event.keycode == KEY_R:
+		if event.keycode == KEY_E:
+			initialize()
+			generate_mesh(true)
+		elif event.keycode == KEY_R:
 			generate_mesh()
+		elif event.keycode == KEY_UP:
+			brush_size += 1
+			brush_text.text = "Brush Size:     [b]" + str(brush_size) + "[/b]"
+		elif event.keycode == KEY_DOWN:
+			if brush_size > 1:
+				brush_size -= 1
+				brush_text.text = "Brush Size:     [b]" + str(brush_size) + "[/b]" 
 		elif event.keycode == KEY_H:
 			VIEW_HEIGHT_MAP = toggle(VIEW_HEIGHT_MAP, "Height map")
 		elif event.keycode == KEY_B:
@@ -120,6 +134,8 @@ func _input(event):
 			PRINT_STATUS_MESSAGES = toggle(PRINT_STATUS_MESSAGES, "Status messages")
 		elif event.keycode == KEY_O:
 			ENABLE_SMOOTHING = toggle(ENABLE_SMOOTHING, "Terrain smoothing")
+		elif event.keycode == KEY_F:
+			VIEW_FEATURE_MAP = toggle(VIEW_FEATURE_MAP, "Feature map")
 		elif event.keycode == KEY_T:
 			VIEW_BIOME_TEST = toggle(VIEW_BIOME_TEST, "Biome test")
 	
@@ -147,7 +163,11 @@ func _input(event):
 			grid_position.y = int(grid_position.y)
 			print(grid_position)
 			
-			biome_map[grid_position.x][grid_position.y] = 1 << selected_biome
+			for x in range(grid_position.x - brush_size + 1, grid_position.x + brush_size):
+				for y in range(grid_position.y - brush_size + 1, grid_position.y + brush_size):
+					if abs(grid_position.x - x) + abs(grid_position.y - y) <= brush_size:
+						if x >= 0 && x <= WIDTH && y >= 0 && y <= HEIGHT:
+							biome_map[x][y] = 1 << selected_biome
 			reload_mesh()
 		
 		elif event.button_index == MOUSE_BUTTON_WHEEL_DOWN and event.pressed:
@@ -173,7 +193,18 @@ func toggle(setting: bool, setting_name: String) -> bool:
 	return setting
 
 
+func initialize() -> void:
+	biome_map = []
+	for x in range(WIDTH + 1):
+		var col = []
+		col.resize(HEIGHT + 1)
+		biome_map.append(col)
+
+
 func reload_mesh():
+	var state = VIEW_BIOME_MAP
+	VIEW_BIOME_MAP = true
+	
 	var my_mesh = generate_grid()
 	
 	var mdt = MeshDataTool.new()
@@ -182,20 +213,22 @@ func reload_mesh():
 		return
 	print_status("Created MeshDataTool from surface")
 	
-	var color_map = generate_colors()
+	var color_map = generate_colors(biome_map, true)
 	print_status("Generated color map")
 	
 	self.mesh = compile_mesh(mdt, color_map)
 	print_status("Mesh compiled")
+	
+	VIEW_BIOME_MAP = state
 
 
-func generate_mesh(blank_mesh: bool = false) -> void:
+func generate_mesh(is_blank: bool = false) -> void:
 	if PRINT_STATUS_MESSAGES:
 		print("-----")
 		print("Starting new mesh generation...")
 	last_update_time = Time.get_ticks_usec()	# Reset timer for new mesh generation
 	
-	if !blank_mesh:
+	if !is_blank:
 		if !VIEW_BIOME_TEST:
 			biome_map = generate_biome_map()
 		else:
@@ -211,12 +244,12 @@ func generate_mesh(blank_mesh: bool = false) -> void:
 		return
 	print_status("Created MeshDataTool from surface")
 	
-	if !blank_mesh:
+	if !is_blank:
 		noise = FastNoiseLite.new()
 		noise.set_noise_type(FastNoiseLite.TYPE_PERLIN)
 		noise.set_seed(Time.get_datetime_dict_from_system().second)
 	
-	height_map = generate_height_map(biome_map, blank_mesh || !VIEW_HEIGHT_MAP)
+	height_map = generate_height_map(biome_map, is_blank || !VIEW_HEIGHT_MAP)
 	print_status("Generated height map")
 	
 	if ENABLE_SMOOTHING:
@@ -225,14 +258,15 @@ func generate_mesh(blank_mesh: bool = false) -> void:
 		smooth_height_map()
 		print_status("Smoothed height map")
 	
-	var color_map = generate_colors()
+	var color_map
+	if is_blank:
+		color_map = generate_colors(biome_map, true)
+	else:
+		color_map = generate_colors(biome_map)
 	print_status("Generated color map")
 	
 	self.mesh = compile_mesh(mdt, color_map)
 	print_status("Mesh compiled")
-	
-	#print(biome_size)
-	#print(biome_dict)
 
 
 func print_status(message):
@@ -313,13 +347,33 @@ func limit_options_of_node(node: WFCNode, limit: int, arrays: Array) -> void:
 		arrays[new].append(node)
 
 
-func generate_biome_map():
-	biome_size = []
-	biome_size.resize(BIOME.size())
-	for i in range(BIOME.size()):
-		biome_size[i] = 0
-	biome_dict = {}
+func collapse_node(node: WFCNode, node_mat: Array, node_arrs: Array) -> void:
+	var x0 = node.pos.x
+	var y0 = node.pos.y
+	var limit = node.options
 	
+	for i in range(1, BIOME.size() - 1):
+		limit |= limit >> 1
+		limit |= limit << 1
+		if y0 - i >= 0:
+			for x in range(x0 - i, x0 + i + 1):
+				if x >= 0 && x <= WIDTH:
+					limit_options_of_node(node_mat[x][y0 - i], limit, node_arrs)
+		if y0 + i <= HEIGHT:
+			for x in range(x0 - i, x0 + i + 1):
+				if x >= 0 && x <= WIDTH:
+					limit_options_of_node(node_mat[x][y0 + i], limit, node_arrs)
+		if x0 - i >= 0:
+			for y in range(y0 - i, y0 + i + 1):
+				if y >= 0 && y <= HEIGHT:
+					limit_options_of_node(node_mat[x0 - i][y], limit, node_arrs)
+		if x0 + i <= WIDTH:
+			for y in range(y0 - i, y0 + i + 1):
+				if y >= 0 && y <= HEIGHT:
+					limit_options_of_node(node_mat[x0 + i][y], limit, node_arrs)
+
+
+func generate_biome_map():
 	var node_mat = []
 	var node_arrs = []	# Array of arrays, index cooresponds to num remaining options + 1
 	var num_uncollapsed_nodes = (WIDTH + 1) * (HEIGHT + 1)
@@ -336,35 +390,31 @@ func generate_biome_map():
 			node_mat[x][y] = WFCNode.new(x, y)
 			node_arrs[BIOME.size() - 1].append(node_mat[x][y])
 	
-	var num_starting_biomes = 5
+	# Check for existing biome mapping and collapse based upon that
+	for x in range(WIDTH + 1):
+		for y in range(HEIGHT + 1):
+			if biome_map[x][y] != null:
+				var node: WFCNode = node_mat[x][y]
+				node_arrs[node.num_options - 1].erase(node)
+				node_arrs[0].append(node)
+				node.options = biome_map[x][y]
+				node.num_options = 1
+				num_uncollapsed_nodes -= 1
+				collapse_node(node, node_mat, node_arrs)
 	
 	while num_uncollapsed_nodes > 0:
 		# Find the first array with > 0 nodes, choose a random node within that array
 		var rand_node = null
 		
-		if num_starting_biomes > 0:
-			var index = randi_range(0, node_arrs[BIOME.size() - 1].size() - 1)
-			rand_node = node_arrs[BIOME.size() - 1][index]
-			#print(index)
-			#print(rand_node)
-			num_starting_biomes -= 1
-		else:		
-			for i in range(1, node_arrs.size()):
-				#print("i: ", i)
-				#print("size ", node_arrs[i].size())
-				if node_arrs[i].size() > 0:
-					rand_node = node_arrs[i][randi_range(0, node_arrs[i].size() - 1)]
-					break
+		for i in range(1, node_arrs.size()):
+			if node_arrs[i].size() > 0:
+				rand_node = node_arrs[i][randi_range(0, node_arrs[i].size() - 1)]
+				break
 		if rand_node == null:
 			break
 		
-		#if !biome_dict.has(rand_node.options):
-		#	biome_dict[rand_node.options] = 0
-		#biome_dict[rand_node.options] += 1
-		
 		# Collapse vertex
 		var rand_option_index = randi_range(0, rand_node.num_options - 1)
-		#var rand_option_index = randi_range(0, 100) % (rand_node.num_options)
 		var rand_option
 		for i in range(BIOME.size()):
 			if (1 << i) & rand_node.options > 0:
@@ -372,36 +422,13 @@ func generate_biome_map():
 					rand_option = 1 << i 
 					break;
 				rand_option_index -= 1
-		biome_size[log(rand_option)] += 1 ###############################
-		rand_node.options = rand_option
 		node_arrs[rand_node.num_options - 1].erase(rand_node)
 		node_arrs[0].append(rand_node)
+		rand_node.options = rand_option
 		rand_node.num_options = 1
 		num_uncollapsed_nodes -= 1
 		
-		# Update surround nodes
-		var x0 = rand_node.pos.x
-		var y0 = rand_node.pos.y
-		for i in range(1, BIOME.size() - 1):
-		#for i in range(1, 2):
-			rand_option |= rand_option >> 1
-			rand_option |= rand_option << 1
-			if y0 - i >= 0:
-				for x in range(x0 - i, x0 + i + 1):
-					if x >= 0 && x <= WIDTH:
-						limit_options_of_node(node_mat[x][y0 - i], rand_option, node_arrs)
-			if y0 + i <= HEIGHT:
-				for x in range(x0 - i, x0 + i + 1):
-					if x >= 0 && x <= WIDTH:
-						limit_options_of_node(node_mat[x][y0 + i], rand_option, node_arrs)
-			if x0 - i >= 0:
-				for y in range(y0 - i, y0 + i + 1):
-					if y >= 0 && y <= HEIGHT:
-						limit_options_of_node(node_mat[x0 - i][y], rand_option, node_arrs)
-			if x0 + i <= WIDTH:
-				for y in range(y0 - i, y0 + i + 1):
-					if y >= 0 && y <= HEIGHT:
-						limit_options_of_node(node_mat[x0 + i][y], rand_option, node_arrs)
+		collapse_node(rand_node, node_mat, node_arrs)
 	
 	for x in range(WIDTH + 1):
 		for y in range(HEIGHT + 1):
@@ -452,14 +479,14 @@ func generate_height_map(biome_map: Array, is_flat: bool) -> Array:
 					BIOME.BEACHS:
 						height = 5 + 12 * noise.get_noise_2d(15 * x, y)
 					BIOME.OCEANS:
-						height = -3 + 5 * noise.get_noise_2d(10 * x, 5 * y)
+						height = 0# + 5 * noise.get_noise_2d(10 * x, 5 * y)
 				if height < 0:
 					height = 0
 			
 			height_map[x][y] = height
 	
 	return height_map
-	
+
 
 func generate_feature_map():
 	var sum = 0
@@ -529,7 +556,7 @@ func blend_biomes(radius: int) -> void:
 		for y in range(HEIGHT + 1):
 			if new_height_map[x][y] != null:
 				height_map[x][y] = new_height_map[x][y]
-			
+
 
 func smooth_height_map():
 	var new_height_map = []
@@ -589,7 +616,7 @@ func smooth_at_coords(new_height_map, x, y):
 				new_height_map[i][j] -= std_dev * tanh(z_score / 4)
 
 
-func generate_colors():
+func generate_colors(biome_map: Array, is_blank: bool = false) -> Array:
 	var color_map = []
 	
 	for x in range(WIDTH + 1):
@@ -598,7 +625,15 @@ func generate_colors():
 		color_map.append(col)
 		
 		for y in range(HEIGHT + 1):
-			if VIEW_BIOME_MAP:
+			if VIEW_FEATURE_MAP:
+				if abs(feature_map[x][y]) > feature_threshold:
+					color_map[x][y] = Color(128, 0, 128, 1)
+					print("feature!")
+					continue
+			
+			if VIEW_BIOME_MAP || is_blank:
+				if biome_map[x][y] == 0:
+					color_map[x][y] = Color(255, 255, 255, 1)
 				if biome_map[x][y] == BIOME.HIGH_MOUNTAINS:
 					color_map[x][y] = Color(255, 0, 0, 1)
 				elif biome_map[x][y] == BIOME.MOUNTAINS:
@@ -609,8 +644,6 @@ func generate_colors():
 					color_map[x][y] = Color(0, 255, 255, 1)
 				elif biome_map[x][y] == BIOME.OCEANS:
 					color_map[x][y] = Color(0, 0, 255, 1)
-			elif height_map[x][y] == 0:
-				color_map[x][y] = Color(255, 255, 255, 1)
 			else:
 				if height_map[x][y] > 35:
 					color_map[x][y] = SNOW
@@ -630,7 +663,7 @@ func compile_mesh(mdt: MeshDataTool, color_map: Array) -> ArrayMesh:
 	# Apply heightmap to mesh
 	for i in range(mdt.get_vertex_count()):
 		var vertex: Vector3 = mdt.get_vertex(i)
-		vertex[1] = height_map[i / (WIDTH + 1)][i % (WIDTH + 1)]
+		vertex[1] = height_map[i % (WIDTH + 1)][i / (WIDTH + 1)]
 		mdt.set_vertex(i, vertex)
 	
 	var vertices = PackedVector3Array()
@@ -647,9 +680,7 @@ func compile_mesh(mdt: MeshDataTool, color_map: Array) -> ArrayMesh:
 			
 			vertices.push_back(mdt.get_vertex(faceVertex))
 			uvs.push_back(mdt.get_vertex_uv(faceVertex))
-			if x == 1 && y == 1:
-				colors.push_back(Color(0, 0, 255, 1))
-			elif color_map[x][y] == null:
+			if color_map[x][y] == null:
 				colors.push_back(Color(255, 255, 255, 1))
 			else:
 				colors.push_back(color_map[x][y])
