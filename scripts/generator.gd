@@ -1,32 +1,16 @@
 extends MeshInstance3D
 
 # Overall settings
-var PRINT_STATUS_MESSAGES = false
+var PRINT_STATUS_MESSAGES = true
 var VIEW_BIOME_TEST = false
 var VIEW_BIOME_MAP = false
 var VIEW_HEIGHT_MAP = true
 var ENABLE_SMOOTHING = true
 
 # Mesh settings
-const WIDTH = 75
-const HEIGHT = 75
-const CELL_SIZE = 2.0
-#const CON_KERNEL = [[-1, -1, -1],
-#					[-1,  8, -1],
-#					[-1, -1, -1]]
-const CON_KERNEL = [[ 0, -1,  0],
-					[-1,  4, -1],
-					[ 0, -1,  0]]
-#const CON_KERNEL = [[-1, -1, -1, -1, -1],
-#					[-1, -2, -2, -2, -1],
-#					[-1, -2, 30, -2, -1],
-#					[-1, -2, -2, -2, -1],
-#					[-1, -1, -1, -1, -1]]
-#const CON_KERNEL = [[0, 0, -1, 0, 0],
-#					[0, 0, -1, 0, 0],
-#					[0, 0,  4, 0, 0],
-#					[0, 0, -1, 0, 0],
-#					[0, 0, -1, 0, 0]]
+const WIDTH = 200
+const HEIGHT = 200
+const CELL_SIZE = 3.0
 const FEATURE_SENSITIVITY = 0.5
 const BIOME_BLEND = 5
 
@@ -60,10 +44,10 @@ var brush_text: RichTextLabel
 
 # Script globals
 var selected_biome: int = 0
-var brush_size: int = 1
+var brush_size: int = 5
 var last_update_time
-var biome_map
 var noise
+var biome_map
 var height_map
 
 
@@ -71,11 +55,6 @@ var height_map
 # Sets up blank mesh and prints controls to output
 func _ready():
 	initialize()
-	
-	var state = PRINT_STATUS_MESSAGES
-	PRINT_STATUS_MESSAGES = false
-	generate_mesh(true)
-	PRINT_STATUS_MESSAGES = state
 	
 	camera = get_viewport().get_camera_3d()
 	
@@ -103,7 +82,7 @@ func _ready():
 	print("O: toggle terrain smoothing")
 	print("-----")
 	
-	pass
+	generate_mesh(true)
 
 
 # Runs every frame, unused
@@ -156,7 +135,7 @@ func _input(event):
 			var grid_position: Vector2 = Vector2(result.position.x, result.position.z)
 			grid_position.x += ((WIDTH + 1) * CELL_SIZE) / 2
 			grid_position.y += ((HEIGHT + 1) * CELL_SIZE) / 2
-			grid_position /= 2
+			grid_position /= CELL_SIZE
 			grid_position.x = int(grid_position.x)
 			grid_position.y = int(grid_position.y)
 			if PRINT_STATUS_MESSAGES:
@@ -256,7 +235,7 @@ func generate_mesh(is_blank: bool = false) -> void:
 	height_map = generate_height_map(biome_map, is_blank || !VIEW_HEIGHT_MAP)
 	print_status("Generated height map")
 	
-	if ENABLE_SMOOTHING:
+	if !is_blank && ENABLE_SMOOTHING:
 		var gaussian_kernel = generate_gaussian_kernel(10, 1.5)
 		height_map = convolve(height_map, gaussian_kernel)
 		print_status("Smoothed height map")
@@ -488,9 +467,9 @@ func generate_height_map(biome_map: Array, is_flat: bool) -> Array:
 					BIOME.PLAINS:
 						height = 10 + 50 * noise.get_noise_2d(x, y)
 					BIOME.BEACHS:
-						height = 5 + 12 * noise.get_noise_2d(15 * x, y)
+						height = 5 + 12 * noise.get_noise_2d(15 * x, 5 * y)
 					BIOME.OCEANS:
-						height = 0# + 5 * noise.get_noise_2d(10 * x, 5 * y)
+						height = 0
 				if height < 0:
 					height = 0
 			
@@ -623,26 +602,3 @@ func compile_mesh(mdt: MeshDataTool, color_map: Array) -> ArrayMesh:
 	arr_mesh.surface_set_material(0, mat)
 	
 	return arr_mesh
-
-
-# Goes in generate_biome_map(), prints option matrix
-"""
-if num_starting_biomes >= 0:
-	if num_starting_biomes == 0:
-		num_starting_biomes -= 1
-	var string = ""
-	for x in range(WIDTH + 1):
-		for y in range(HEIGHT + 1):
-			string += str(node_mat[x][y].options) + " "
-		string += "\n\n"
-	print(string)
-	print()
-	print()
-	
-	string = ""
-	for x in range(WIDTH + 1):
-		for y in range(HEIGHT + 1):
-			string += str(node_mat[x][y].num_options) + " "
-		string += "\n\n"
-	print(string)
-"""
