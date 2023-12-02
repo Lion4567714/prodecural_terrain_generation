@@ -146,6 +146,9 @@ func _input(event):
 			grid_position.x = int(grid_position.x)
 			grid_position.y = int(grid_position.y)
 			print(grid_position)
+			
+			biome_map[grid_position.x][grid_position.y] = 1 << selected_biome
+			reload_mesh()
 		
 		elif event.button_index == MOUSE_BUTTON_WHEEL_DOWN and event.pressed:
 			if selected_biome == BIOME.size() - 1:
@@ -168,6 +171,22 @@ func toggle(setting: bool, setting_name: String) -> bool:
 		setting = true
 		print(setting_name + " -> on")
 	return setting
+
+
+func reload_mesh():
+	var my_mesh = generate_grid()
+	
+	var mdt = MeshDataTool.new()
+	if not mdt.create_from_surface(my_mesh, 0) == OK:
+		print("ERROR: create_from_surface()")
+		return
+	print_status("Created MeshDataTool from surface")
+	
+	var color_map = generate_colors()
+	print_status("Generated color map")
+	
+	self.mesh = compile_mesh(mdt, color_map)
+	print_status("Mesh compiled")
 
 
 func generate_mesh(blank_mesh: bool = false) -> void:
@@ -233,8 +252,8 @@ func generate_grid():
 		for x in range(HEIGHT + 1):
 			vertices.push_back(Vector3((x - (WIDTH + 1) / 2) * CELL_SIZE, 0, (y - (HEIGHT + 1) / 2) * CELL_SIZE))
 	
-	for x in range(WIDTH):
-		for y in range(HEIGHT):
+	for y in range(WIDTH):
+		for x in range(HEIGHT):
 			var i0 = y + (WIDTH + 1) * x
 			var i1 = i0 + 1
 			var i2 = i1 + WIDTH
@@ -295,15 +314,12 @@ func limit_options_of_node(node: WFCNode, limit: int, arrays: Array) -> void:
 
 
 func generate_biome_map():
-	#randomize()
-	
 	biome_size = []
 	biome_size.resize(BIOME.size())
 	for i in range(BIOME.size()):
 		biome_size[i] = 0
 	biome_dict = {}
 	
-	var map = []
 	var node_mat = []
 	var node_arrs = []	# Array of arrays, index cooresponds to num remaining options + 1
 	var num_uncollapsed_nodes = (WIDTH + 1) * (HEIGHT + 1)
@@ -312,7 +328,6 @@ func generate_biome_map():
 	for x in range(WIDTH + 1):
 		var arr1 = []
 		arr1.resize(HEIGHT + 1)
-		map.append(arr1)
 		var arr2 = []
 		arr2.resize(HEIGHT + 1)
 		node_mat.append(arr2)
@@ -326,27 +341,6 @@ func generate_biome_map():
 	while num_uncollapsed_nodes > 0:
 		# Find the first array with > 0 nodes, choose a random node within that array
 		var rand_node = null
-		
-		"""
-		if num_starting_biomes >= 0:
-			if num_starting_biomes == 0:
-				num_starting_biomes -= 1
-			var string = ""
-			for x in range(WIDTH + 1):
-				for y in range(HEIGHT + 1):
-					string += str(node_mat[x][y].options) + " "
-				string += "\n\n"
-			print(string)
-			print()
-			print()
-			
-			string = ""
-			for x in range(WIDTH + 1):
-				for y in range(HEIGHT + 1):
-					string += str(node_mat[x][y].num_options) + " "
-				string += "\n\n"
-			print(string)
-		"""
 		
 		if num_starting_biomes > 0:
 			var index = randi_range(0, node_arrs[BIOME.size() - 1].size() - 1)
@@ -411,9 +405,9 @@ func generate_biome_map():
 	
 	for x in range(WIDTH + 1):
 		for y in range(HEIGHT + 1):
-			map[x][y] = node_mat[x][y].options
+			biome_map[x][y] = node_mat[x][y].options
 	
-	return map
+	return biome_map
 
 
 func generate_biome_map_test():
@@ -604,9 +598,20 @@ func generate_colors():
 		color_map.append(col)
 		
 		for y in range(HEIGHT + 1):
-			if height_map[x][y] == 0:
+			if VIEW_BIOME_MAP:
+				if biome_map[x][y] == BIOME.HIGH_MOUNTAINS:
+					color_map[x][y] = Color(255, 0, 0, 1)
+				elif biome_map[x][y] == BIOME.MOUNTAINS:
+					color_map[x][y] = Color(255, 255, 0, 1)
+				elif biome_map[x][y] == BIOME.PLAINS:
+					color_map[x][y] = Color(0, 255, 0, 1)
+				elif biome_map[x][y] == BIOME.BEACHS:
+					color_map[x][y] = Color(0, 255, 255, 1)
+				elif biome_map[x][y] == BIOME.OCEANS:
+					color_map[x][y] = Color(0, 0, 255, 1)
+			elif height_map[x][y] == 0:
 				color_map[x][y] = Color(255, 255, 255, 1)
-			elif !VIEW_BIOME_MAP:
+			else:
 				if height_map[x][y] > 35:
 					color_map[x][y] = SNOW
 				elif biome_map[x][y] == BIOME.BEACHS:
@@ -617,17 +622,6 @@ func generate_colors():
 					color_map[x][y] = WATER
 				else:
 					color_map[x][y] = GRASS
-			else:		
-				if biome_map[x][y] == BIOME.HIGH_MOUNTAINS:
-					color_map[x][y] = Color(255, 0, 0, 1)
-				elif biome_map[x][y] == BIOME.MOUNTAINS:
-					color_map[x][y] = Color(255, 255, 0, 1)
-				elif biome_map[x][y] == BIOME.PLAINS:
-					color_map[x][y] = Color(0, 255, 0, 1)
-				elif biome_map[x][y] == BIOME.BEACHS:
-					color_map[x][y] = Color(0, 255, 255, 1)
-				elif biome_map[x][y] == BIOME.OCEANS:
-					color_map[x][y] = Color(0, 0, 255, 1) 
 	
 	return color_map
 
@@ -648,12 +642,17 @@ func compile_mesh(mdt: MeshDataTool, color_map: Array) -> ArrayMesh:
 		var normal = mdt.get_face_normal(face)
 		for vertex in range(0, 3):
 			var faceVertex = mdt.get_face_vertex(face, vertex)
-			var x = (int)(mdt.get_vertex(faceVertex)[2] / CELL_SIZE)
-			var y = (int)(mdt.get_vertex(faceVertex)[0] / CELL_SIZE)
+			var x = (int)(mdt.get_vertex(faceVertex)[0] / CELL_SIZE) + (WIDTH + 1) / 2
+			var y = (int)(mdt.get_vertex(faceVertex)[2] / CELL_SIZE) + (HEIGHT + 1) / 2
 			
 			vertices.push_back(mdt.get_vertex(faceVertex))
 			uvs.push_back(mdt.get_vertex_uv(faceVertex))
-			colors.push_back(color_map[x][y])			
+			if x == 1 && y == 1:
+				colors.push_back(Color(0, 0, 255, 1))
+			elif color_map[x][y] == null:
+				colors.push_back(Color(255, 255, 255, 1))
+			else:
+				colors.push_back(color_map[x][y])
 			normals.push_back(normal)
 
 	var arrays = []
@@ -671,3 +670,26 @@ func compile_mesh(mdt: MeshDataTool, color_map: Array) -> ArrayMesh:
 	arr_mesh.surface_set_material(0, mat)
 	
 	return arr_mesh
+
+
+# Goes in generate_biome_map(), prints option matrix
+"""
+if num_starting_biomes >= 0:
+	if num_starting_biomes == 0:
+		num_starting_biomes -= 1
+	var string = ""
+	for x in range(WIDTH + 1):
+		for y in range(HEIGHT + 1):
+			string += str(node_mat[x][y].options) + " "
+		string += "\n\n"
+	print(string)
+	print()
+	print()
+	
+	string = ""
+	for x in range(WIDTH + 1):
+		for y in range(HEIGHT + 1):
+			string += str(node_mat[x][y].num_options) + " "
+		string += "\n\n"
+	print(string)
+"""
