@@ -5,7 +5,6 @@ var PRINT_STATUS_MESSAGES = false
 var VIEW_BIOME_TEST = false
 var VIEW_BIOME_MAP = false
 var VIEW_HEIGHT_MAP = true
-var VIEW_FEATURE_MAP = false
 var ENABLE_SMOOTHING = true
 
 # Mesh settings
@@ -66,8 +65,6 @@ var last_update_time
 var biome_map
 var noise
 var height_map
-var feature_map
-var feature_threshold
 
 
 # Runs once at the start
@@ -137,8 +134,6 @@ func _input(event):
 			PRINT_STATUS_MESSAGES = toggle(PRINT_STATUS_MESSAGES, "Status messages")
 		elif event.keycode == KEY_O:
 			ENABLE_SMOOTHING = toggle(ENABLE_SMOOTHING, "Terrain smoothing")
-		elif event.keycode == KEY_F:
-			VIEW_FEATURE_MAP = toggle(VIEW_FEATURE_MAP, "Feature map")
 		elif event.keycode == KEY_T:
 			VIEW_BIOME_TEST = toggle(VIEW_BIOME_TEST, "Biome test")
 	
@@ -264,10 +259,6 @@ func generate_mesh(is_blank: bool = false) -> void:
 	if ENABLE_SMOOTHING:
 		var gaussian_kernel = generate_gaussian_kernel(10, 1.5)
 		height_map = convolve(height_map, gaussian_kernel)
-		
-		#generate_feature_map()
-		#blend_biomes(BIOME_BLEND)
-		#smooth_height_map()
 		print_status("Smoothed height map")
 	
 	var color_map
@@ -529,18 +520,6 @@ func generate_gaussian_kernel(size: int, std_dev: float) -> Array:
 	return kernel
 
 
-# Unused?
-func generate_feature_map():
-	var sum = 0
-	for x in range(CON_KERNEL.size()):
-		for y in range(CON_KERNEL.size()):
-			if CON_KERNEL[x][y] < 0:
-				sum += -CON_KERNEL[x][y]
-	feature_threshold = sum * FEATURE_SENSITIVITY
-	
-	feature_map = convolve(height_map, CON_KERNEL)
-
-
 # Applies kernel to given matrix and returns resulting convolution
 func convolve(matrix: Array, kernel: Array) -> Array:
 	var new_matrix = []
@@ -563,106 +542,6 @@ func convolve(matrix: Array, kernel: Array) -> Array:
 	return new_matrix
 
 
-# Unused?
-func blend_biomes(radius: int) -> void:
-	var new_height_map = []
-	for x in range(WIDTH + 1):
-		var col = []
-		col.resize(HEIGHT + 1)
-		new_height_map.append(col)
-	
-	for x0 in range(1, WIDTH):
-		for y0 in range(1, HEIGHT):
-			var num = 0
-			var sum = 0
-			
-			for x1 in range(x0 - radius, x0 + radius + 1):
-				for y1 in range(y0 - radius, y0 + radius + 1):
-					if x1 < 0 || y1 < 0 || x1 > WIDTH || y1 > HEIGHT:
-						continue
-					var dist = abs(x0 - x1) + abs(y0 - y1)
-					if dist > radius:
-						continue
-					num += 1
-					sum += height_map[x1][y1]
-			
-			var mean = sum / num
-			
-			for x1 in range(x0 - radius, x0 + radius + 1):
-				for y1 in range(y0 - radius, y0 + radius + 1):
-					if x1 < 0 || y1 < 0 || x1 > WIDTH || y1 > HEIGHT:
-						continue
-					var dist = abs(x0 - x1) + abs(y0 - y1)
-					if dist > radius:
-						continue
-					new_height_map[x1][y1] = mean + (height_map[x1][y1] - height_map[x0][y1]) * pow(0.75, dist)
-	
-	for x in range(WIDTH + 1):
-		for y in range(HEIGHT + 1):
-			if new_height_map[x][y] != null:
-				height_map[x][y] = new_height_map[x][y]
-
-
-# Unused?
-func smooth_height_map():
-	var new_height_map = []
-	for x in range(WIDTH + 1):
-		var col = []
-		col.resize(HEIGHT + 1)
-		new_height_map.append(col)
-		for y in range(HEIGHT + 1):
-			new_height_map[x][y] = height_map[x][y]
-	
-	for x in range(WIDTH + 1):
-		for y in range(HEIGHT + 1):
-			if abs(feature_map[x][y]) > feature_threshold:
-				smooth_at_coords(new_height_map, x, y)
-	
-	for x in range(WIDTH + 1):
-		for y in range(HEIGHT + 1):
-			if new_height_map[x][y] != null:
-				height_map[x][y] = new_height_map[x][y]
-
-
-# Unused?
-func smooth_at_coords(new_height_map, x, y):
-	var sum = 0
-	for i in range(x - BIOME_BLEND - 1, x + BIOME_BLEND + 1):
-		for j in range(y - BIOME_BLEND - 1, y + BIOME_BLEND + 1):
-			if i < 0 || i > WIDTH || j < 0 || j > HEIGHT:
-				continue
-			else:
-				sum += height_map[i][j]
-	
-	var mean = sum / pow(2 * BIOME_BLEND + 1, 2)
-	
-	for i in range(x - BIOME_BLEND, x + BIOME_BLEND):
-		for j in range(y - BIOME_BLEND, y + BIOME_BLEND):
-			if i < 0 || i > WIDTH || j < 0 || j > HEIGHT:
-				continue
-			else:
-				var center_dist = abs(x - i) + abs(y - j)
-				new_height_map[i][j] = mean + pow(0.8, pow(BIOME_BLEND, 2) - center_dist) * (height_map[i][j] - mean)
-	return
-	
-	var std_dev = 0
-	for i in range(x - BIOME_BLEND, x + BIOME_BLEND):
-		for j in range(y - BIOME_BLEND, y + BIOME_BLEND):
-			if i < 0 || i > WIDTH || j < 0 || j > HEIGHT:
-				continue
-			else:
-				std_dev += pow(height_map[i][j] - mean, 2)
-	std_dev = pow(std_dev / (pow(2 * BIOME_BLEND + 1, 2) - 1), 0.5)
-	
-	for i in range(x - BIOME_BLEND, x + BIOME_BLEND):
-		for j in range(y - BIOME_BLEND, y + BIOME_BLEND):
-			if i < 0 || i > WIDTH || j < 0 || j > HEIGHT:
-				continue
-			else:
-				var z_score = (height_map[i][j] - mean) / std_dev
-				new_height_map[i][j] -= std_dev * tanh(z_score / 4)
-
-
 # Creates color map using biome and height data
 func generate_colors(biome_map: Array, is_blank: bool = false) -> Array:
 	var color_map = []
@@ -673,12 +552,6 @@ func generate_colors(biome_map: Array, is_blank: bool = false) -> Array:
 		color_map.append(col)
 		
 		for y in range(HEIGHT + 1):
-			if VIEW_FEATURE_MAP:
-				if abs(feature_map[x][y]) > feature_threshold:
-					color_map[x][y] = Color(128, 0, 128, 1)
-					print("feature!")
-					continue
-			
 			if VIEW_BIOME_MAP || is_blank:
 				if biome_map[x][y] == 0:
 					color_map[x][y] = Color(255, 255, 255, 1)
