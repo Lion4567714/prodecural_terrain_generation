@@ -1,9 +1,13 @@
 extends MeshInstance3D
 
-const TEST_BIOME = false
+# Overall settings
+var PRINT_STATUS_MESSAGES = true
+var VIEW_BIOME_TEST = false
+var VIEW_BIOME_MAP = false
+var VIEW_HEIGHT_MAP = true
+var ENABLE_SMOOTHING = true
 
-const BIOME_VIEW = false
-
+# Mesh settings
 const WIDTH = 50
 const HEIGHT = 50
 const CELL_SIZE = 2.0
@@ -26,6 +30,7 @@ const CON_KERNEL = [[ 0, -1,  0],
 const FEATURE_SENSITIVITY = 0.5
 const BIOME_BLEND = 5
 
+# Constants (DON'T PLAY WITH)
 const HAMMING = [0, 1, 1, 2, 1, 2, 2, 3, 1, 2, 2, 3, 2, 3, 3, 4, 1, 2, 2, 3, 2, 3, 3, 4, 2, 3, 3, 4, 3, 4, 4, 5]
 const BIOME = {
 	HIGH_MOUNTAINS = 0b00001,
@@ -34,11 +39,26 @@ const BIOME = {
 	BEACHS = 0b01000,
 	OCEANS = 0b10000
 }
+const BIOME_NAMES = [
+	"High Mountains",
+	"Mountains",
+	"Plains",
+	"Beachs",
+	"Oceans"
+]
 const SNOW = Color(255, 255, 255, 1)
 const GRASS = Color(0, 255, 0, 1)
 const SAND = Color(255, 240, 0, 1)
 const WATER = Color(0, 0, 255, 1)
+const RAYCAST_LENGTH = 1000
 
+# Global scene components
+var camera: Camera3D
+var collision_area: Area3D
+var biome_text: RichTextLabel
+var selected_biome: int = 0
+
+# Script globals
 var last_update_time
 var biome_map
 var biome_size
@@ -51,7 +71,35 @@ var feature_threshold
 
 # Called when the node enters the scene tree for the first time.
 func _ready():
-	#generate_mesh()
+	biome_map = []
+	for x in range(WIDTH + 1):
+		var col = []
+		col.resize(HEIGHT + 1)
+		biome_map.append(col)
+	
+	PRINT_STATUS_MESSAGES = false
+	generate_mesh(true)
+	PRINT_STATUS_MESSAGES = true
+	
+	camera = get_viewport().get_camera_3d()
+	
+	collision_area = get_node("/root/Node3D/Area3D")
+	collision_area.scale = Vector3(WIDTH * CELL_SIZE, 1, HEIGHT * CELL_SIZE)
+	
+	biome_text = get_node("/root/Node3D/Canvas/BiomeText")
+	biome_text.text = "Selected Biome: [b]" + BIOME_NAMES[selected_biome] + "[/b]"
+	
+	print("Controls:")
+	print("WASD+C+Space: camera movement")
+	print("LMB: draw biome")
+	print("Scroll: switch biome type")
+	print("E: regenerate mesh")
+	print("T: toggle biome test")
+	print("B: toggle biome map")
+	print("H: toggle height map")
+	print("M: toggle status messages")
+	print("O: toggle terrain smoothing")
+	
 	pass
 
 
@@ -64,45 +112,76 @@ func _input(event):
 	if event is InputEventKey and event.pressed:
 		if event.keycode == KEY_R:
 			generate_mesh()
+		elif event.keycode == KEY_H:
+			VIEW_HEIGHT_MAP = toggle(VIEW_HEIGHT_MAP, "Height map")
+		elif event.keycode == KEY_B:
+			VIEW_BIOME_MAP = toggle(VIEW_BIOME_MAP, "Biome map")
+		elif event.keycode == KEY_M:
+			PRINT_STATUS_MESSAGES = toggle(PRINT_STATUS_MESSAGES, "Status messages")
+		elif event.keycode == KEY_O:
+			ENABLE_SMOOTHING = toggle(ENABLE_SMOOTHING, "Terrain smoothing")
+		elif event.keycode == KEY_T:
+			VIEW_BIOME_TEST = toggle(VIEW_BIOME_TEST, "Biome test")
+	
 	elif event is InputEventMouseButton:
 		if event.button_index == MOUSE_BUTTON_LEFT and event.pressed:
-			print("Mouse pressed!")
-			
-			var ray_length = 1000
-			print(get_viewport())
-			print(get_viewport().get_mouse_position())
 			var mouse_pos = get_viewport().get_mouse_position()
-			var camera = get_viewport().get_camera_3d()
 			var from = camera.project_ray_origin(mouse_pos)
-			var to = from + camera.project_ray_normal(mouse_pos) * ray_length
-			print(from)
-			print(to)
+			var to = from + camera.project_ray_normal(mouse_pos) * RAYCAST_LENGTH
 			
 			var space_state = get_world_3d().get_direct_space_state()
-			#var space_state = get_world_3d().direct_space_state
-			# use global coordinates, not local to node
 			var params = PhysicsRayQueryParameters3D.new()
 			params.from = from
 			params.to = to
 			params.collide_with_areas = true
-			#params.exclude = []
 			var result = space_state.intersect_ray(params)
-			if result:
-				print("Hit at " + str(result.position))
-			else:
-				print("No hit")
+			
+			if !result:
+				return
+			
+			var grid_position: Vector2 = Vector2(result.position.x, result.position.z)
+			grid_position.x += ((WIDTH + 1) * CELL_SIZE) / 2
+			grid_position.y += ((HEIGHT + 1) * CELL_SIZE) / 2
+			grid_position /= 2
+			grid_position.x = int(grid_position.x)
+			grid_position.y = int(grid_position.y)
+			print(grid_position)
+		
+		elif event.button_index == MOUSE_BUTTON_WHEEL_DOWN and event.pressed:
+			if selected_biome == BIOME.size() - 1:
+				return
+			selected_biome += 1
+			biome_text.text = "Selected Biome: [b]" + BIOME_NAMES[selected_biome] + "[/b]"
+	
+		elif event.button_index == MOUSE_BUTTON_WHEEL_UP and event.pressed:
+			if selected_biome == 0:
+				return
+			selected_biome -= 1
+			biome_text.text = "Selected Biome: [b]" + BIOME_NAMES[selected_biome] + "[/b]"
 
 
-func generate_mesh():
-	print("-----")
-	print("Starting new mesh generation...")
+func toggle(setting: bool, setting_name: String) -> bool:
+	if setting:
+		setting = false
+		print(setting_name + " -> off")
+	else:
+		setting = true
+		print(setting_name + " -> on")
+	return setting
+
+
+func generate_mesh(blank_mesh: bool = false) -> void:
+	if PRINT_STATUS_MESSAGES:
+		print("-----")
+		print("Starting new mesh generation...")
 	last_update_time = Time.get_ticks_usec()	# Reset timer for new mesh generation
 	
-	if !TEST_BIOME:
-		biome_map = generate_biome_map()
-	else:
-		biome_map = generate_biome_map_test()
-	print_status("Generated biome map")
+	if !blank_mesh:
+		if !VIEW_BIOME_TEST:
+			biome_map = generate_biome_map()
+		else:
+			biome_map = generate_biome_map_test()
+		print_status("Generated biome map")
 	
 	var my_mesh = generate_grid()
 	print_status("Generated grid")
@@ -113,80 +192,34 @@ func generate_mesh():
 		return
 	print_status("Created MeshDataTool from surface")
 	
-	noise = FastNoiseLite.new()
-	noise.set_noise_type(FastNoiseLite.TYPE_PERLIN)
-	noise.set_seed(Time.get_datetime_dict_from_system().second)
+	if !blank_mesh:
+		noise = FastNoiseLite.new()
+		noise.set_noise_type(FastNoiseLite.TYPE_PERLIN)
+		noise.set_seed(Time.get_datetime_dict_from_system().second)
 	
-	height_map = []
-	for x in range(WIDTH + 1):
-		var col = []
-		col.resize(WIDTH + 1)
-		height_map.append(col)
-		for y in range(HEIGHT + 1):
-			height_map[x][y] = random_height(x, y, biome_map[x][y])
-	print_status("Added randomization")
+	height_map = generate_height_map(biome_map, blank_mesh || !VIEW_HEIGHT_MAP)
+	print_status("Generated height map")
 	
-	var sum = 0
-	for x in range(CON_KERNEL.size()):
-		for y in range(CON_KERNEL.size()):
-			if CON_KERNEL[x][y] < 0:
-				sum += -CON_KERNEL[x][y]
-	feature_threshold = sum * FEATURE_SENSITIVITY
-	
-	generate_feature_map()
-	blend_biomes(BIOME_BLEND)
-	smooth_height_map()
-	print_status("Generated feature map and smoothing")
+	if ENABLE_SMOOTHING:
+		generate_feature_map()
+		blend_biomes(BIOME_BLEND)
+		smooth_height_map()
+		print_status("Smoothed height map")
 	
 	var color_map = generate_colors()
 	print_status("Generated color map")
 	
-	# Apply heightmap to mesh
-	for i in range(mdt.get_vertex_count()):
-		var vertex: Vector3 = mdt.get_vertex(i)
-		vertex[1] = height_map[i / (WIDTH + 1)][i % (WIDTH + 1)]
-		mdt.set_vertex(i, vertex)
+	self.mesh = compile_mesh(mdt, color_map)
+	print_status("Mesh compiled")
 	
-	var vertices = PackedVector3Array()
-	var normals = PackedVector3Array()
-	var colors = PackedColorArray()
-	var uvs = PackedVector2Array()
-
-	for face in mdt.get_face_count():
-		var normal = mdt.get_face_normal(face)
-		for vertex in range(0, 3):
-			var faceVertex = mdt.get_face_vertex(face, vertex)
-			var x = (int)(mdt.get_vertex(faceVertex)[2] / CELL_SIZE)
-			var y = (int)(mdt.get_vertex(faceVertex)[0] / CELL_SIZE)
-			
-			vertices.push_back(mdt.get_vertex(faceVertex))
-			uvs.push_back(mdt.get_vertex_uv(faceVertex))
-			colors.push_back(color_map[x][y])			
-			normals.push_back(normal)
-
-	var arrays = []
-	arrays.resize(ArrayMesh.ARRAY_MAX)
-	arrays[ArrayMesh.ARRAY_VERTEX] = vertices
-	arrays[ArrayMesh.ARRAY_NORMAL] = normals
-	arrays[ArrayMesh.ARRAY_COLOR] = colors
-	arrays[ArrayMesh.ARRAY_TEX_UV] = uvs
-	var arr_mesh = ArrayMesh.new()
-	
-	arr_mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
-
-	self.mesh = arr_mesh
-	print_status("Generated final mesh")
-	
-	var mat = StandardMaterial3D.new()
-	mat.vertex_color_use_as_albedo = true
-	mesh.surface_set_material(0, mat)
-	print_status("Done")
-	
-	print(biome_size)
-	print(biome_dict)
+	#print(biome_size)
+	#print(biome_dict)
 
 
 func print_status(message):
+	if !PRINT_STATUS_MESSAGES:
+		return
+	
 	var string = "(%6.3f secs) %s"
 	print(string % [(float)(Time.get_ticks_usec() - last_update_time) / 1_000_000, message])
 	last_update_time = Time.get_ticks_usec()
@@ -403,28 +436,45 @@ func generate_biome_map_test():
 	return map
 
 
-func random_height(x, y, biome):
-	var height = 0
+func generate_height_map(biome_map: Array, is_flat: bool) -> Array:
+	height_map = []
 	
-	match biome:
-		BIOME.HIGH_MOUNTAINS:
-			height = 30 + 150 * noise.get_noise_2d(3 * x, 3 * y)
-		BIOME.MOUNTAINS:
-			height = 20 + 100 * noise.get_noise_2d(1.5 * x, 1.5 * y)
-		BIOME.PLAINS:
-			height = 10 + 50 * noise.get_noise_2d(x, y)
-		BIOME.BEACHS:
-			height = 5 + 12 * noise.get_noise_2d(15 * x, y)
-		BIOME.OCEANS:
-			height = -3 + 5 * noise.get_noise_2d(10 * x, 5 * y)
+	for x in range(WIDTH + 1):
+		var col = []
+		col.resize(HEIGHT + 1)
+		height_map.append(col)
+		
+		for y in range(HEIGHT + 1):
+			var height = 0
+			
+			if !is_flat:
+				match biome_map[x][y]:
+					BIOME.HIGH_MOUNTAINS:
+						height = 30 + 150 * noise.get_noise_2d(3 * x, 3 * y)
+					BIOME.MOUNTAINS:
+						height = 20 + 100 * noise.get_noise_2d(1.5 * x, 1.5 * y)
+					BIOME.PLAINS:
+						height = 10 + 50 * noise.get_noise_2d(x, y)
+					BIOME.BEACHS:
+						height = 5 + 12 * noise.get_noise_2d(15 * x, y)
+					BIOME.OCEANS:
+						height = -3 + 5 * noise.get_noise_2d(10 * x, 5 * y)
+				if height < 0:
+					height = 0
+			
+			height_map[x][y] = height
 	
-	if height < 0:
-		height = 0
-	
-	return height
+	return height_map
 	
 
 func generate_feature_map():
+	var sum = 0
+	for x in range(CON_KERNEL.size()):
+		for y in range(CON_KERNEL.size()):
+			if CON_KERNEL[x][y] < 0:
+				sum += -CON_KERNEL[x][y]
+	feature_threshold = sum * FEATURE_SENSITIVITY
+	
 	feature_map = []
 	for x in range(WIDTH + 1):
 		var col = []
@@ -554,7 +604,9 @@ func generate_colors():
 		color_map.append(col)
 		
 		for y in range(HEIGHT + 1):
-			if !BIOME_VIEW:
+			if height_map[x][y] == 0:
+				color_map[x][y] = Color(255, 255, 255, 1)
+			elif !VIEW_BIOME_MAP:
 				if height_map[x][y] > 35:
 					color_map[x][y] = SNOW
 				elif biome_map[x][y] == BIOME.BEACHS:
@@ -578,3 +630,44 @@ func generate_colors():
 					color_map[x][y] = Color(0, 0, 255, 1) 
 	
 	return color_map
+
+
+func compile_mesh(mdt: MeshDataTool, color_map: Array) -> ArrayMesh:
+	# Apply heightmap to mesh
+	for i in range(mdt.get_vertex_count()):
+		var vertex: Vector3 = mdt.get_vertex(i)
+		vertex[1] = height_map[i / (WIDTH + 1)][i % (WIDTH + 1)]
+		mdt.set_vertex(i, vertex)
+	
+	var vertices = PackedVector3Array()
+	var normals = PackedVector3Array()
+	var colors = PackedColorArray()
+	var uvs = PackedVector2Array()
+
+	for face in mdt.get_face_count():
+		var normal = mdt.get_face_normal(face)
+		for vertex in range(0, 3):
+			var faceVertex = mdt.get_face_vertex(face, vertex)
+			var x = (int)(mdt.get_vertex(faceVertex)[2] / CELL_SIZE)
+			var y = (int)(mdt.get_vertex(faceVertex)[0] / CELL_SIZE)
+			
+			vertices.push_back(mdt.get_vertex(faceVertex))
+			uvs.push_back(mdt.get_vertex_uv(faceVertex))
+			colors.push_back(color_map[x][y])			
+			normals.push_back(normal)
+
+	var arrays = []
+	arrays.resize(ArrayMesh.ARRAY_MAX)
+	arrays[ArrayMesh.ARRAY_VERTEX] = vertices
+	arrays[ArrayMesh.ARRAY_NORMAL] = normals
+	arrays[ArrayMesh.ARRAY_COLOR] = colors
+	arrays[ArrayMesh.ARRAY_TEX_UV] = uvs
+	var arr_mesh = ArrayMesh.new()
+	
+	arr_mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
+	
+	var mat = StandardMaterial3D.new()
+	mat.vertex_color_use_as_albedo = true
+	arr_mesh.surface_set_material(0, mat)
+	
+	return arr_mesh

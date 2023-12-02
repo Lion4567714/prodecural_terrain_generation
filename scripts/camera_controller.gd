@@ -1,5 +1,7 @@
 extends Node3D
 
+var canvas: CanvasLayer
+
 var mouse_is_captured = true
 var move_speed = 50.0
 var look_speed = 0.003
@@ -9,6 +11,19 @@ var rot_y = 0
 # Called when the node enters the scene tree for the first time.
 func _ready():
 	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+	
+	# Create crosshair
+	canvas = get_node("/root/Node3D/Canvas")
+	var line1 = Line2D.new()
+	line1.width = 2
+	line1.add_point(Vector2(get_viewport().size.x / 2 + 10, get_viewport().size.y / 2))
+	line1.add_point(Vector2(get_viewport().size.x / 2 - 10, get_viewport().size.y / 2))
+	var line2 = Line2D.new()
+	line2.width = 2
+	line2.add_point(Vector2(get_viewport().size.x / 2, get_viewport().size.y / 2 + 10))
+	line2.add_point(Vector2(get_viewport().size.x / 2, get_viewport().size.y / 2 - 10))
+	canvas.add_child(line1)
+	canvas.add_child(line2)
 
 
 # Called every frame. 'delta' is the elapsed time since the previous frame.
