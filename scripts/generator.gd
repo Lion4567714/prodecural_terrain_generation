@@ -1,7 +1,7 @@
 extends MeshInstance3D
 
 # Overall settings
-var PRINT_STATUS_MESSAGES = true
+var PRINT_STATUS_MESSAGES = false
 var VIEW_BIOME_TEST = false
 var VIEW_BIOME_MAP = false
 var VIEW_HEIGHT_MAP = true
@@ -70,13 +70,15 @@ var feature_map
 var feature_threshold
 
 
-# Called when the node enters the scene tree for the first time.
+# Runs once at the start
+# Sets up blank mesh and prints controls to output
 func _ready():
 	initialize()
 	
+	var state = PRINT_STATUS_MESSAGES
 	PRINT_STATUS_MESSAGES = false
 	generate_mesh(true)
-	PRINT_STATUS_MESSAGES = true
+	PRINT_STATUS_MESSAGES = state
 	
 	camera = get_viewport().get_camera_3d()
 	
@@ -107,11 +109,12 @@ func _ready():
 	pass
 
 
-# Called every frame. 'delta' is the elapsed time since the previous frame.
+# Runs every frame, unused
 func _process(_delta):
 	pass
 
 
+# Handles keyboard and mouse input related to mesh
 func _input(event):
 	if event is InputEventKey and event.pressed:
 		if event.keycode == KEY_E:
@@ -161,7 +164,8 @@ func _input(event):
 			grid_position /= 2
 			grid_position.x = int(grid_position.x)
 			grid_position.y = int(grid_position.y)
-			print(grid_position)
+			if PRINT_STATUS_MESSAGES:
+				print("Set vertex at " + str(grid_position) + " to " + BIOME_NAMES[selected_biome])
 			
 			for x in range(grid_position.x - brush_size + 1, grid_position.x + brush_size):
 				for y in range(grid_position.y - brush_size + 1, grid_position.y + brush_size):
@@ -183,6 +187,7 @@ func _input(event):
 			biome_text.text = "Selected Biome: [b]" + BIOME_NAMES[selected_biome] + "[/b]"
 
 
+# Toggles settings on and off
 func toggle(setting: bool, setting_name: String) -> bool:
 	if setting:
 		setting = false
@@ -193,6 +198,7 @@ func toggle(setting: bool, setting_name: String) -> bool:
 	return setting
 
 
+# Sets up global variables
 func initialize() -> void:
 	biome_map = []
 	for x in range(WIDTH + 1):
@@ -201,6 +207,8 @@ func initialize() -> void:
 		biome_map.append(col)
 
 
+# Runs every mouse click
+# Redraws blank mesh to show plainted biomes
 func reload_mesh():
 	var state = VIEW_BIOME_MAP
 	VIEW_BIOME_MAP = true
@@ -222,6 +230,7 @@ func reload_mesh():
 	VIEW_BIOME_MAP = state
 
 
+# Main mesh generation function
 func generate_mesh(is_blank: bool = false) -> void:
 	if PRINT_STATUS_MESSAGES:
 		print("-----")
@@ -253,9 +262,12 @@ func generate_mesh(is_blank: bool = false) -> void:
 	print_status("Generated height map")
 	
 	if ENABLE_SMOOTHING:
-		generate_feature_map()
-		blend_biomes(BIOME_BLEND)
-		smooth_height_map()
+		var gaussian_kernel = generate_gaussian_kernel(10, 1.5)
+		height_map = convolve(height_map, gaussian_kernel)
+		
+		#generate_feature_map()
+		#blend_biomes(BIOME_BLEND)
+		#smooth_height_map()
 		print_status("Smoothed height map")
 	
 	var color_map
@@ -269,6 +281,7 @@ func generate_mesh(is_blank: bool = false) -> void:
 	print_status("Mesh compiled")
 
 
+# Prints status messages with timestamp
 func print_status(message):
 	if !PRINT_STATUS_MESSAGES:
 		return
@@ -278,6 +291,7 @@ func print_status(message):
 	last_update_time = Time.get_ticks_usec()
 
 
+# Creates basic triangle frame grid
 func generate_grid():
 	var vertices = PackedVector3Array()
 	var indices = PackedInt32Array()
@@ -311,6 +325,7 @@ func generate_grid():
 	return arr_mesh
 
 
+# Class for representing one node in the wave function collapse algorithm
 class WFCNode:
 	var pos: Vector2
 	var options: int
@@ -337,6 +352,7 @@ class WFCNode:
 		#return "WFCNode: pos (" + str(pos.x) + ", " + str(pos.y) + "), num_options = " + str(num_options)
 
 
+# Masks and updates available options for given node
 func limit_options_of_node(node: WFCNode, limit: int, arrays: Array) -> void:
 	var old = node.num_options - 1
 	node.limit_options(limit)
@@ -347,6 +363,7 @@ func limit_options_of_node(node: WFCNode, limit: int, arrays: Array) -> void:
 		arrays[new].append(node)
 
 
+# Handles updating surrounding nodes after node collapse
 func collapse_node(node: WFCNode, node_mat: Array, node_arrs: Array) -> void:
 	var x0 = node.pos.x
 	var y0 = node.pos.y
@@ -373,6 +390,7 @@ func collapse_node(node: WFCNode, node_mat: Array, node_arrs: Array) -> void:
 					limit_options_of_node(node_mat[x0 + i][y], limit, node_arrs)
 
 
+# Generates biome map using wave function collapse algorithm
 func generate_biome_map():
 	var node_mat = []
 	var node_arrs = []	# Array of arrays, index cooresponds to num remaining options + 1
@@ -437,6 +455,7 @@ func generate_biome_map():
 	return biome_map
 
 
+# Creates artificial biome map for testing purposes
 func generate_biome_map_test():
 	var map = []
 	for x in range(WIDTH + 1):
@@ -457,6 +476,7 @@ func generate_biome_map_test():
 	return map
 
 
+# Generates randomness to height map
 func generate_height_map(biome_map: Array, is_flat: bool) -> Array:
 	height_map = []
 	
@@ -488,6 +508,28 @@ func generate_height_map(biome_map: Array, is_flat: bool) -> Array:
 	return height_map
 
 
+# Generates Gaussian kernel for convolutional smoothing
+func generate_gaussian_kernel(size: int, std_dev: float) -> Array:
+	var kernel = []
+	var sum = 0
+	
+	for x in range(size):
+		var col = []
+		col.resize(size)
+		kernel.append(col)
+		
+		for y in range(size):
+			kernel[x][y] = (1 / (2 * PI * pow(std_dev, 2))) * pow(2.718282, -((pow(x - size / 2, 2) + pow(y - size / 2, 2)) / (2 * pow(std_dev, 2))))
+			sum += kernel[x][y]
+	
+	for x in range(size):
+		for y in range(size):
+			kernel[x][y] /= sum
+	
+	return kernel
+
+
+# Unused?
 func generate_feature_map():
 	var sum = 0
 	for x in range(CON_KERNEL.size()):
@@ -496,29 +538,32 @@ func generate_feature_map():
 				sum += -CON_KERNEL[x][y]
 	feature_threshold = sum * FEATURE_SENSITIVITY
 	
-	feature_map = []
-	for x in range(WIDTH + 1):
+	feature_map = convolve(height_map, CON_KERNEL)
+
+
+# Applies kernel to given matrix and returns resulting convolution
+func convolve(matrix: Array, kernel: Array) -> Array:
+	var new_matrix = []
+	
+	for x in range(matrix.size()):
 		var col = []
-		col.resize(HEIGHT + 1)
-		feature_map.append(col)
-		for y in range(HEIGHT + 1):
-			feature_map[x][y] = convolve(CON_KERNEL, x, y)
-
-
-func convolve(kernel, x, y):
-	var sum = 0
-	var kernel_width = kernel.size() / 2
+		col.resize(matrix[x].size())
+		new_matrix.append(col)
+		
+		for y in range(matrix[x].size()):
+			new_matrix[x][y] = 0
+			
+			for i in range(kernel.size()):
+				for j in range(kernel[i].size()):
+					var mat_x = x - kernel.size() / 2 + i
+					var mat_y = y - kernel[i].size() / 2 + j
+					if mat_x >= 0 && mat_x < matrix.size() && mat_y >= 0 && mat_y < matrix[x].size():
+						new_matrix[x][y] += matrix[mat_x][mat_y] * kernel[i][j]
 	
-	for i in range(x - kernel_width, x + kernel_width + 1):
-		for j in range(y - kernel_width, y + kernel_width + 1):
-			if i < 0 || i > WIDTH || j < 0 || j > HEIGHT:
-				sum += kernel[x - i + kernel_width][y - j + kernel_width]
-			else:
-				sum += kernel[x - i + kernel_width][y - j + kernel_width] * height_map[i][j]
-	
-	return sum
+	return new_matrix
 
 
+# Unused?
 func blend_biomes(radius: int) -> void:
 	var new_height_map = []
 	for x in range(WIDTH + 1):
@@ -558,6 +603,7 @@ func blend_biomes(radius: int) -> void:
 				height_map[x][y] = new_height_map[x][y]
 
 
+# Unused?
 func smooth_height_map():
 	var new_height_map = []
 	for x in range(WIDTH + 1):
@@ -578,6 +624,7 @@ func smooth_height_map():
 				height_map[x][y] = new_height_map[x][y]
 
 
+# Unused?
 func smooth_at_coords(new_height_map, x, y):
 	var sum = 0
 	for i in range(x - BIOME_BLEND - 1, x + BIOME_BLEND + 1):
@@ -616,6 +663,7 @@ func smooth_at_coords(new_height_map, x, y):
 				new_height_map[i][j] -= std_dev * tanh(z_score / 4)
 
 
+# Creates color map using biome and height data
 func generate_colors(biome_map: Array, is_blank: bool = false) -> Array:
 	var color_map = []
 	
@@ -651,7 +699,7 @@ func generate_colors(biome_map: Array, is_blank: bool = false) -> Array:
 					color_map[x][y] = SAND
 				elif height_map[x][y] > 0 && biome_map[x][y] == BIOME.OCEANS:
 					color_map[x][y] = SAND
-				elif height_map[x][y] == 0:
+				elif height_map[x][y] < 1:
 					color_map[x][y] = WATER
 				else:
 					color_map[x][y] = GRASS
@@ -659,6 +707,7 @@ func generate_colors(biome_map: Array, is_blank: bool = false) -> Array:
 	return color_map
 
 
+# Final pass before rendering mesh
 func compile_mesh(mdt: MeshDataTool, color_map: Array) -> ArrayMesh:
 	# Apply heightmap to mesh
 	for i in range(mdt.get_vertex_count()):
