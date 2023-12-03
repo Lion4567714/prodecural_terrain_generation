@@ -1,15 +1,16 @@
+class_name MeshController
 extends MeshInstance3D
 
 # Overall settings
-var PRINT_STATUS_MESSAGES = true
+var PRINT_STATUS_MESSAGES = false
 var VIEW_BIOME_TEST = false
 var VIEW_BIOME_MAP = false
 var VIEW_HEIGHT_MAP = true
 var ENABLE_SMOOTHING = true
 
 # Mesh settings
-const WIDTH = 100
-const HEIGHT = 100
+const WIDTH = 75
+const HEIGHT = 75
 const CELL_SIZE = 3.0
 const FEATURE_SENSITIVITY = 0.5
 const BIOME_BLEND = 5
@@ -59,6 +60,8 @@ var gaussian_kernel
 var biome_map
 var height_map
 
+signal progress_updated(ratio: float)
+
 
 class Biome:
 	var name: String
@@ -102,8 +105,6 @@ class Biome:
 # Runs once at the start
 # Sets up blank mesh and prints controls to output
 func _ready():
-	initialize()
-	
 	camera = get_viewport().get_camera_3d()
 	
 	collision_area = get_node("/root/Node3D/Area3D")
@@ -116,7 +117,6 @@ func _ready():
 	brush_text.text = "Brush Size:     [b]" + str(brush_size) + "[/b]"
 	
 	progress_bar = get_node("/root/Node3D/Canvas/ProgressBar")
-	#progress_bar.visible = false
 	
 	print("Controls:")
 	print("WASD+C+Space: camera movement")
@@ -132,8 +132,6 @@ func _ready():
 	print("M: toggle status messages")
 	print("O: toggle terrain smoothing")
 	print("-----")
-	
-	generate_mesh(true)
 
 
 # Runs every frame, unused
@@ -147,9 +145,8 @@ func _input(event):
 		if event.keycode == KEY_E:
 			initialize()
 			generate_mesh(true)
-		elif event.keycode == KEY_R:
-			progress_bar.visible = true
-			generate_mesh()
+		#elif event.keycode == KEY_R:
+			#generate_mesh()
 		elif event.keycode == KEY_UP:
 			brush_size += 1
 			brush_text.text = "Brush Size:     [b]" + str(brush_size) + "[/b]"
@@ -215,17 +212,17 @@ func _input(event):
 
 # Toggles settings on and off
 func toggle(setting: bool, setting_name: String) -> bool:
-	if setting:
-		setting = false
-		print(setting_name + " -> off")
-	else:
-		setting = true
-		print(setting_name + " -> on")
+	setting = not setting
+	print(setting_name + " -> " + "on" if setting else "off")
 	return setting
 
 
 # Sets up global variables
 func initialize() -> void:
+	add_user_signal("progress_updated")
+	#add_user_signal("progress_updated", [{"name": "ratio", "type": TYPE_FLOAT}])
+	print(get_signal_list())
+	
 	self.mesh = generate_grid()
 	
 	noise = FastNoiseLite.new()
@@ -239,6 +236,8 @@ func initialize() -> void:
 		var col = []
 		col.resize(HEIGHT + 1)
 		biome_map.append(col)
+	
+	generate_mesh(true)
 
 
 # Runs every mouse click
@@ -416,9 +415,6 @@ func collapse_node(node: WFCNode, node_mat: Array, node_arrs: Array) -> void:
 
 # Generates biome map using wave function collapse algorithm
 func generate_biome_map():
-	progress_bar.set_as_ratio(0.25)
-	progress_bar.visible = true
-	
 	var node_mat = []
 	var node_arrs = []	# Array of arrays, index cooresponds to num remaining options + 1
 	var num_uncollapsed_nodes = (WIDTH + 1) * (HEIGHT + 1)
@@ -448,7 +444,7 @@ func generate_biome_map():
 				collapse_node(node, node_mat, node_arrs)
 	
 	while num_uncollapsed_nodes > 0:
-		progress_bar.ratio = 1 - num_uncollapsed_nodes / ((WIDTH + 1) * (HEIGHT + 1))
+		progress_updated.emit(1 - num_uncollapsed_nodes / ((WIDTH + 1) * (HEIGHT + 1)))
 		
 		# Find the first array with > 0 nodes, choose a random node within that array
 		var rand_node = null

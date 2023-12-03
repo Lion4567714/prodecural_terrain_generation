@@ -1,0 +1,38 @@
+[gd_scene load_steps=3 format=3 uid="uid://dxm2d7pv00toe"]
+
+[ext_resource type="FontFile" uid="uid://da3avynq8bbnh" path="res://resources/JetBrainsMonoNerdFont-ExtraLight.ttf" id="1_iytgc"]
+[ext_resource type="FontFile" uid="uid://c4p0f80bpkt24" path="res://resources/JetBrainsMonoNerdFont-Bold.ttf" id="2_dco32"]
+
+[node name="Canvas" type="CanvasLayer"]
+
+[node name="BiomeText" type="RichTextLabel" parent="."]
+offset_left = 27.0
+offset_top = 20.0
+offset_right = 890.0
+offset_bottom = 81.0
+theme_override_fonts/normal_font = ExtResource("1_iytgc")
+theme_override_fonts/bold_font = ExtResource("2_dco32")
+theme_override_font_sizes/normal_font_size = 40
+theme_override_font_sizes/bold_font_size = 40
+bbcode_enabled = true
+text = "Selected Biome: [b]Ocean[/b]"
+fit_content = true
+
+[node name="BrushText" type="RichTextLabel" parent="."]
+offset_left = 27.0
+offset_top = 80.0
+offset_right = 890.0
+offset_bottom = 141.0
+theme_override_fonts/normal_font = ExtResource("1_iytgc")
+theme_override_fonts/bold_font = ExtResource("2_dco32")
+theme_override_font_sizes/normal_font_size = 40
+theme_override_font_sizes/bold_font_size = 40
+bbcode_enabled = true
+text = "Brush Size:     [b]1[/b]"
+fit_content = true
+
+[node name="ProgressBar" type="ProgressBar" parent="."]
+offset_left = 281.0
+offset_top = 609.0
+offset_right = 914.0
+offset_bottom = 638.0
