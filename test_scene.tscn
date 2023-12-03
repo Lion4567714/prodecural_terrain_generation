@@ -52,3 +52,9 @@ theme_override_font_sizes/bold_font_size = 40
 bbcode_enabled = true
 text = "Brush Size:     [b]1[/b]"
 fit_content = true
+
+[node name="ProgressBar" type="ProgressBar" parent="Canvas"]
+offset_left = 281.0
+offset_top = 609.0
+offset_right = 914.0
+offset_bottom = 638.0

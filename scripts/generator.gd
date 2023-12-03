@@ -8,47 +8,95 @@ var VIEW_HEIGHT_MAP = true
 var ENABLE_SMOOTHING = true
 
 # Mesh settings
-const WIDTH = 200
-const HEIGHT = 200
+const WIDTH = 100
+const HEIGHT = 100
 const CELL_SIZE = 3.0
 const FEATURE_SENSITIVITY = 0.5
 const BIOME_BLEND = 5
 
 # Constants (DON'T PLAY WITH)
-const HAMMING = [0, 1, 1, 2, 1, 2, 2, 3, 1, 2, 2, 3, 2, 3, 3, 4, 1, 2, 2, 3, 2, 3, 3, 4, 2, 3, 3, 4, 3, 4, 4, 5]
 const BIOME = {
-	HIGH_MOUNTAINS = 0b00001,
-	MOUNTAINS = 0b00010,
+	MOUNTAINS = 0b00001,
+	HILLS = 0b00010,
 	PLAINS = 0b00100,
 	BEACHS = 0b01000,
 	OCEANS = 0b10000
 }
 const BIOME_NAMES = [
-	"High Mountains",
 	"Mountains",
+	"Hills",
 	"Plains",
 	"Beachs",
 	"Oceans"
+]
+const BIOME_PLACEHOLDER_COLORS = [
+	Color.RED,
+	Color.YELLOW,
+	Color.DARK_GREEN,
+	Color.DEEP_SKY_BLUE,
+	Color.WEB_PURPLE
 ]
 const SNOW = Color(255, 255, 255, 1)
 const GRASS = Color(0, 255, 0, 1)
 const SAND = Color(255, 240, 0, 1)
 const WATER = Color(0, 0, 255, 1)
 const RAYCAST_LENGTH = 1000
+const HAMMING = [0, 1, 1, 2, 1, 2, 2, 3, 1, 2, 2, 3, 2, 3, 3, 4, 1, 2, 2, 3, 2, 3, 3, 4, 2, 3, 3, 4, 3, 4, 4, 5]
 
 # Global scene components
 var camera: Camera3D
 var collision_area: Area3D
 var biome_text: RichTextLabel
 var brush_text: RichTextLabel
+var progress_bar: ProgressBar
 
 # Script globals
 var selected_biome: int = 0
 var brush_size: int = 5
 var last_update_time
 var noise
+var gaussian_kernel
 var biome_map
 var height_map
+
+
+class Biome:
+	var name: String
+	var color: Color
+	
+	var noise: FastNoiseLite
+	var noise_offset: float
+	var noise_intensity: float
+	var noise_x_sensitivity: float
+	var noise_y_sensitivity: float
+	
+	var terrain_colors: Array[Color]
+	var terrain_color_constraints: Array[Vector2]
+	
+	func _init(_name: String, _color: Color = Color.BLACK, _noise: FastNoiseLite = FastNoiseLite.new(), _noise_offset: float = 0, \
+			_noise_intensity: float = 1.0, _noise_x_sensitivity: float = 1.0, _noise_y_sensitivity: float = 1.0,
+			_terrain_colors: Array[Color] = [Color.BLACK], _terrain_color_constraints: Array[Vector2] = [Vector2(-1, -1)]) -> void:
+		assert(terrain_colors.size() == terrain_color_constraints.size(), "Biome._init(): Every terrain color must have a corresponding terrain color constraint!")
+		
+		name = _name
+		color = _color
+		noise = _noise
+		noise_offset = _noise_offset
+		noise_intensity = _noise_intensity
+		noise_x_sensitivity = _noise_x_sensitivity
+		noise_y_sensitivity = _noise_y_sensitivity
+		terrain_colors = _terrain_colors
+		terrain_color_constraints = _terrain_color_constraints
+	
+	func height_at(x: int, y: int) -> float:
+		return noise_offset + noise_intensity * noise.get_noise_2d(noise_x_sensitivity * x, noise_y_sensitivity * y)
+	
+	func color_at(height: float) -> Color:
+		for i in range(terrain_colors.size()):
+			if (height > terrain_color_constraints[i].x || terrain_color_constraints[i].x == -1) && \
+					(height < terrain_color_constraints[i].y || terrain_color_constraints[i].y == -1):
+				return terrain_colors[i]
+		return Color.BLACK
 
 
 # Runs once at the start
@@ -66,6 +114,9 @@ func _ready():
 	
 	brush_text = get_node("/root/Node3D/Canvas/BrushText")
 	brush_text.text = "Brush Size:     [b]" + str(brush_size) + "[/b]"
+	
+	progress_bar = get_node("/root/Node3D/Canvas/ProgressBar")
+	#progress_bar.visible = false
 	
 	print("Controls:")
 	print("WASD+C+Space: camera movement")
@@ -97,6 +148,7 @@ func _input(event):
 			initialize()
 			generate_mesh(true)
 		elif event.keycode == KEY_R:
+			progress_bar.visible = true
 			generate_mesh()
 		elif event.keycode == KEY_UP:
 			brush_size += 1
@@ -174,6 +226,14 @@ func toggle(setting: bool, setting_name: String) -> bool:
 
 # Sets up global variables
 func initialize() -> void:
+	self.mesh = generate_grid()
+	
+	noise = FastNoiseLite.new()
+	noise.set_noise_type(FastNoiseLite.TYPE_PERLIN)
+	noise.set_seed(Time.get_datetime_dict_from_system().second)
+	
+	gaussian_kernel = generate_gaussian_kernel(10, 1.5)
+	
 	biome_map = []
 	for x in range(WIDTH + 1):
 		var col = []
@@ -227,16 +287,10 @@ func generate_mesh(is_blank: bool = false) -> void:
 		return
 	print_status("Created MeshDataTool from surface")
 	
-	if !is_blank:
-		noise = FastNoiseLite.new()
-		noise.set_noise_type(FastNoiseLite.TYPE_PERLIN)
-		noise.set_seed(Time.get_datetime_dict_from_system().second)
-	
 	height_map = generate_height_map(biome_map, is_blank || !VIEW_HEIGHT_MAP)
 	print_status("Generated height map")
 	
 	if !is_blank && ENABLE_SMOOTHING:
-		var gaussian_kernel = generate_gaussian_kernel(10, 1.5)
 		height_map = convolve(height_map, gaussian_kernel)
 		print_status("Smoothed height map")
 	
@@ -362,6 +416,9 @@ func collapse_node(node: WFCNode, node_mat: Array, node_arrs: Array) -> void:
 
 # Generates biome map using wave function collapse algorithm
 func generate_biome_map():
+	progress_bar.set_as_ratio(0.25)
+	progress_bar.visible = true
+	
 	var node_mat = []
 	var node_arrs = []	# Array of arrays, index cooresponds to num remaining options + 1
 	var num_uncollapsed_nodes = (WIDTH + 1) * (HEIGHT + 1)
@@ -391,6 +448,8 @@ func generate_biome_map():
 				collapse_node(node, node_mat, node_arrs)
 	
 	while num_uncollapsed_nodes > 0:
+		progress_bar.ratio = 1 - num_uncollapsed_nodes / ((WIDTH + 1) * (HEIGHT + 1))
+		
 		# Find the first array with > 0 nodes, choose a random node within that array
 		var rand_node = null
 		
@@ -421,6 +480,8 @@ func generate_biome_map():
 	for x in range(WIDTH + 1):
 		for y in range(HEIGHT + 1):
 			biome_map[x][y] = node_mat[x][y].options
+	
+	#progress_bar.visible = false
 	
 	return biome_map
 
@@ -460,9 +521,9 @@ func generate_height_map(biome_map: Array, is_flat: bool) -> Array:
 			
 			if !is_flat:
 				match biome_map[x][y]:
-					BIOME.HIGH_MOUNTAINS:
-						height = 30 + 150 * noise.get_noise_2d(3 * x, 3 * y)
 					BIOME.MOUNTAINS:
+						height = 30 + 150 * noise.get_noise_2d(3 * x, 3 * y)
+					BIOME.HILLS:
 						height = 20 + 100 * noise.get_noise_2d(1.5 * x, 1.5 * y)
 					BIOME.PLAINS:
 						height = 10 + 50 * noise.get_noise_2d(x, y)
@@ -534,9 +595,9 @@ func generate_colors(biome_map: Array, is_blank: bool = false) -> Array:
 			if VIEW_BIOME_MAP || is_blank:
 				if biome_map[x][y] == 0:
 					color_map[x][y] = Color(255, 255, 255, 1)
-				if biome_map[x][y] == BIOME.HIGH_MOUNTAINS:
+				if biome_map[x][y] == BIOME.MOUNTAINS:
 					color_map[x][y] = Color(255, 0, 0, 1)
-				elif biome_map[x][y] == BIOME.MOUNTAINS:
+				elif biome_map[x][y] == BIOME.HILLS:
 					color_map[x][y] = Color(255, 255, 0, 1)
 				elif biome_map[x][y] == BIOME.PLAINS:
 					color_map[x][y] = Color(0, 255, 0, 1)
