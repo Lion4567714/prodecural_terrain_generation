@@ -9,40 +9,18 @@ var VIEW_HEIGHT_MAP = true
 var ENABLE_SMOOTHING = true
 
 # Mesh settings
-const WIDTH = 150
-const HEIGHT = 150
+const WIDTH = 75
+const HEIGHT = 75
 const CELL_SIZE = 3.0
 const FEATURE_SENSITIVITY = 0.5
 const BIOME_BLEND = 5
 
 # Constants (DON'T PLAY WITH)
-const BIOME = {
-	MOUNTAINS = 0b00001,
-	HILLS = 0b00010,
-	PLAINS = 0b00100,
-	BEACHS = 0b01000,
-	OCEANS = 0b10000
-}
-const BIOME_NAMES = [
-	"Mountains",
-	"Hills",
-	"Plains",
-	"Beachs",
-	"Oceans"
-]
-const BIOME_PLACEHOLDER_COLORS = [
-	Color.RED,
-	Color.YELLOW,
-	Color.DARK_GREEN,
-	Color.DEEP_SKY_BLUE,
-	Color.WEB_PURPLE
-]
 const SNOW = Color(255, 255, 255, 1)
 const GRASS = Color(0, 255, 0, 1)
 const SAND = Color(255, 240, 0, 1)
 const WATER = Color(0, 0, 255, 1)
 const RAYCAST_LENGTH = 1000
-const HAMMING = [0, 1, 1, 2, 1, 2, 2, 3, 1, 2, 2, 3, 2, 3, 3, 4, 1, 2, 2, 3, 2, 3, 3, 4, 2, 3, 3, 4, 3, 4, 4, 5]
 
 # Global scene components
 var camera: Camera3D
@@ -52,10 +30,12 @@ var brush_text: RichTextLabel
 var progress_bar: ProgressBar
 
 # Script globals
+static var hamming: Array[int] = []
+static var biomes: Array[Biome] = []
 var selected_biome: int = 0
 var brush_size: int = 5
 var last_update_time
-var noise
+var noise: FastNoiseLite
 var gaussian_kernel
 var biome_map
 var height_map
@@ -79,6 +59,7 @@ class Biome:
 	func _init(_name: String, _color: Color = Color.BLACK, _noise: FastNoiseLite = FastNoiseLite.new(), _noise_offset: float = 0, \
 			_noise_intensity: float = 1.0, _noise_x_sensitivity: float = 1.0, _noise_y_sensitivity: float = 1.0,
 			_terrain_colors: Array[Color] = [Color.BLACK], _terrain_color_constraints: Array[Vector2] = [Vector2(-1, -1)]) -> void:
+		
 		assert(terrain_colors.size() == terrain_color_constraints.size(), "Biome._init(): Every terrain color must have a corresponding terrain color constraint!")
 		
 		name = _name
@@ -96,7 +77,7 @@ class Biome:
 	
 	func color_at(height: float) -> Color:
 		for i in range(terrain_colors.size()):
-			if (height > terrain_color_constraints[i].x || terrain_color_constraints[i].x == -1) && \
+			if (height >= terrain_color_constraints[i].x || terrain_color_constraints[i].x == -1) && \
 					(height < terrain_color_constraints[i].y || terrain_color_constraints[i].y == -1):
 				return terrain_colors[i]
 		return Color.BLACK
@@ -104,22 +85,46 @@ class Biome:
 
 # Runs once at the start
 # Sets up blank mesh and prints controls to output
-func _ready():
+func _ready():	
+	# Initialize signals
 	add_user_signal("progress_updated", [{"name": "ratio", "type": TYPE_FLOAT}])
 	
-	camera = get_viewport().get_camera_3d()
+	# Initialize noise
+	noise = FastNoiseLite.new()
+	noise.set_noise_type(FastNoiseLite.TYPE_PERLIN)
+	noise.set_seed(Time.get_datetime_dict_from_system().second)
 	
+	# Initialize biomes
+	initialize_biomes()
+	
+	# Create hamming weight array
+	var max_ones = 1
+	for i in range(biomes.size() - 1):
+		max_ones <<= 1
+		max_ones += 1
+	for i in range(max_ones + 1):
+		var number = i
+		var ones = 0
+		for j in range(biomes.size()):
+			ones += number & 0b1
+			number >>= 1 
+		hamming.append(ones)
+	
+	# Initialize smoothing kernel
+	gaussian_kernel = generate_gaussian_kernel(10, 1.5)
+	
+	# Initialize node connections
+	camera = get_viewport().get_camera_3d()
 	collision_area = get_node("/root/Node3D/Area3D")
 	collision_area.scale = Vector3(WIDTH * CELL_SIZE, 1, HEIGHT * CELL_SIZE)
-	
 	biome_text = get_node("/root/Node3D/Canvas/BiomeText")
-	biome_text.text = "Selected Biome: [b]" + BIOME_NAMES[selected_biome] + "[/b]"
-	
+	biome_text.text = "Selected Biome: [b]" + biomes[selected_biome].name + "[/b]"
 	brush_text = get_node("/root/Node3D/Canvas/BrushText")
 	brush_text.text = "Brush Size:     [b]" + str(brush_size) + "[/b]"
-	
 	progress_bar = get_node("/root/Node3D/Canvas/ProgressBar")
 	
+	# Print controls
+	"""
 	print("Controls:")
 	print("WASD+C+Space: camera movement")
 	print("LMB: draw biome")
@@ -134,21 +139,41 @@ func _ready():
 	print("M: toggle status messages")
 	print("O: toggle terrain smoothing")
 	print("-----")
+	"""
+	
+	reset_mesh()
+	generate_mesh(true)
 
 
-# Runs every frame, unused
-func _process(_delta):
-	pass
+func initialize_biomes() -> void:
+	biomes.append(Biome.new("Mountains", Color.RED, noise, 30, 150, 3, 3, \
+		[Color.WHITE, Color.GREEN, Color.BLUE], [Vector2(-1, 35), Vector2(35, 0), Vector2(0, -1)]))
+	biomes.append(Biome.new("Plains", Color.GREEN, noise, 10, 50, 1, 1, \
+		[Color.GREEN], [Vector2(-1, -1)]))
+	biomes.append(Biome.new("Oceans", Color.BLUE, noise, 0, 0, 0, 0, \
+		[Color.BLUE], [Vector2(-1, -1)]))
+
+
+# Sets up global variables
+func reset_mesh() -> void:	
+	self.mesh = generate_grid()
+	
+	biome_map = []
+	for x in range(WIDTH + 1):
+		var col = []
+		col.resize(HEIGHT + 1)
+		biome_map.append(col)
+		for y in range(HEIGHT + 1):
+			biome_map[x][y] = -1
 
 
 # Handles keyboard and mouse input related to mesh
 func _input(event):
+	# R key handled in GameController for multithreading
 	if event is InputEventKey and event.pressed:
 		if event.keycode == KEY_E:
-			initialize()
+			reset_mesh()
 			generate_mesh(true)
-		#elif event.keycode == KEY_R:
-			#generate_mesh()
 		elif event.keycode == KEY_UP:
 			brush_size += 1
 			brush_text.text = "Brush Size:     [b]" + str(brush_size) + "[/b]"
@@ -190,52 +215,33 @@ func _input(event):
 			grid_position.x = int(grid_position.x)
 			grid_position.y = int(grid_position.y)
 			if PRINT_STATUS_MESSAGES:
-				print("Set vertex at " + str(grid_position) + " to " + BIOME_NAMES[selected_biome])
+				print("Set vertex at " + str(grid_position) + " to " + biomes[selected_biome].name)
 			
 			for x in range(grid_position.x - brush_size + 1, grid_position.x + brush_size):
 				for y in range(grid_position.y - brush_size + 1, grid_position.y + brush_size):
 					if abs(grid_position.x - x) + abs(grid_position.y - y) <= brush_size:
 						if x >= 0 && x <= WIDTH && y >= 0 && y <= HEIGHT:
-							biome_map[x][y] = 1 << selected_biome
+							biome_map[x][y] = selected_biome
 			reload_mesh()
 		
 		elif event.button_index == MOUSE_BUTTON_WHEEL_DOWN and event.pressed:
-			if selected_biome == BIOME.size() - 1:
+			if selected_biome == biomes.size() - 1:
 				return
 			selected_biome += 1
-			biome_text.text = "Selected Biome: [b]" + BIOME_NAMES[selected_biome] + "[/b]"
+			biome_text.text = "Selected Biome: [b]" + biomes[selected_biome].name + "[/b]"
 	
 		elif event.button_index == MOUSE_BUTTON_WHEEL_UP and event.pressed:
 			if selected_biome == 0:
 				return
 			selected_biome -= 1
-			biome_text.text = "Selected Biome: [b]" + BIOME_NAMES[selected_biome] + "[/b]"
+			biome_text.text = "Selected Biome: [b]" + biomes[selected_biome].name + "[/b]"
 
 
 # Toggles settings on and off
 func toggle(setting: bool, setting_name: String) -> bool:
 	setting = not setting
-	print(setting_name + " -> " + "on" if setting else "off")
+	print(" > " + setting_name + " -> " + ("on" if setting else "off"))
 	return setting
-
-
-# Sets up global variables
-func initialize() -> void:	
-	self.mesh = generate_grid()
-	
-	noise = FastNoiseLite.new()
-	noise.set_noise_type(FastNoiseLite.TYPE_PERLIN)
-	noise.set_seed(Time.get_datetime_dict_from_system().second)
-	
-	gaussian_kernel = generate_gaussian_kernel(10, 1.5)
-	
-	biome_map = []
-	for x in range(WIDTH + 1):
-		var col = []
-		col.resize(HEIGHT + 1)
-		biome_map.append(col)
-	
-	generate_mesh(true)
 
 
 # Runs every mouse click
@@ -252,7 +258,7 @@ func reload_mesh():
 		return
 	print_status("Created MeshDataTool from surface")
 	
-	var color_map = generate_colors(biome_map, true)
+	var color_map = generate_colors(true)
 	print_status("Generated color map")
 	
 	self.mesh = compile_mesh(mdt, color_map)
@@ -263,6 +269,8 @@ func reload_mesh():
 
 # Main mesh generation function
 func generate_mesh(is_blank: bool = false) -> void:
+	noise.set_seed(Time.get_ticks_usec())
+	
 	if PRINT_STATUS_MESSAGES:
 		print("-----")
 		print("Starting new mesh generation...")
@@ -284,7 +292,7 @@ func generate_mesh(is_blank: bool = false) -> void:
 		return
 	print_status("Created MeshDataTool from surface")
 	
-	height_map = generate_height_map(biome_map, is_blank || !VIEW_HEIGHT_MAP)
+	height_map = generate_height_map(is_blank || !VIEW_HEIGHT_MAP)
 	print_status("Generated height map")
 	
 	if !is_blank && ENABLE_SMOOTHING:
@@ -293,13 +301,15 @@ func generate_mesh(is_blank: bool = false) -> void:
 	
 	var color_map
 	if is_blank:
-		color_map = generate_colors(biome_map, true)
+		color_map = generate_colors(true)
 	else:
-		color_map = generate_colors(biome_map)
+		color_map = generate_colors()
 	print_status("Generated color map")
 	
-	self.mesh = compile_mesh(mdt, color_map)
+	mesh = compile_mesh(mdt, color_map)
 	print_status("Mesh compiled")
+	
+	call_deferred("emit_signal", "progress_updated", -1)
 
 
 # Prints status messages with timestamp
@@ -356,14 +366,14 @@ class WFCNode:
 		pos.x = x
 		pos.y = y
 		options = 0
-		for biome in BIOME.values():
-			options += biome
-		num_options = BIOME.size()
+		for i in range(MeshController.biomes.size()):
+			options += 1 << i
+		num_options = MeshController.biomes.size()
 	
 	func limit_options(limit: int) -> void:
 		assert(options & limit > 0, "num_options == 0! options: " + str(options) + ", limit: " + str(limit))
 		options &= limit
-		num_options = HAMMING[options]
+		num_options = MeshController.hamming[options]
 	
 	static func sort(a: WFCNode, b: WFCNode) -> bool:
 		return a.num_options < b.num_options
@@ -390,7 +400,7 @@ func collapse_node(node: WFCNode, node_mat: Array, node_arrs: Array) -> void:
 	var y0 = node.pos.y
 	var limit = node.options
 	
-	for i in range(1, BIOME.size() - 1):
+	for i in range(1, biomes.size() - 1):
 		limit |= limit >> 1
 		limit |= limit << 1
 		if y0 - i >= 0:
@@ -416,7 +426,7 @@ func generate_biome_map():
 	var node_mat = []
 	var node_arrs = []	# Array of arrays, index cooresponds to num remaining options + 1
 	var num_uncollapsed_nodes = (WIDTH + 1) * (HEIGHT + 1)
-	for i in range(BIOME.size()):
+	for i in range(biomes.size()):
 		node_arrs.append([])
 	for x in range(WIDTH + 1):
 		var arr1 = []
@@ -427,21 +437,22 @@ func generate_biome_map():
 		
 		for y in range(HEIGHT + 1):
 			node_mat[x][y] = WFCNode.new(x, y)
-			node_arrs[BIOME.size() - 1].append(node_mat[x][y])
+			node_arrs[biomes.size() - 1].append(node_mat[x][y])
 	
 	# Check for existing biome mapping and collapse based upon that
 	for x in range(WIDTH + 1):
 		for y in range(HEIGHT + 1):
-			if biome_map[x][y] != null:
+			if biome_map[x][y] != -1:
 				var node: WFCNode = node_mat[x][y]
 				node_arrs[node.num_options - 1].erase(node)
 				node_arrs[0].append(node)
-				node.options = biome_map[x][y]
+				node.options = pow(2, biome_map[x][y])
 				node.num_options = 1
 				num_uncollapsed_nodes -= 1
 				collapse_node(node, node_mat, node_arrs)
 	
 	while num_uncollapsed_nodes > 0:
+		# Inform GUIController of a progress update
 		call_deferred("emit_signal", "progress_updated", 1.0 - num_uncollapsed_nodes / (float)((WIDTH + 1) * (HEIGHT + 1)))
 		
 		# Find the first array with > 0 nodes, choose a random node within that array
@@ -457,7 +468,7 @@ func generate_biome_map():
 		# Collapse vertex
 		var rand_option_index = randi_range(0, rand_node.num_options - 1)
 		var rand_option
-		for i in range(BIOME.size()):
+		for i in range(biomes.size()):
 			if (1 << i) & rand_node.options > 0:
 				if rand_option_index == 0:
 					rand_option = 1 << i 
@@ -473,7 +484,7 @@ func generate_biome_map():
 	
 	for x in range(WIDTH + 1):
 		for y in range(HEIGHT + 1):
-			biome_map[x][y] = node_mat[x][y].options
+			biome_map[x][y] = log(node_mat[x][y].options) / log(2)
 	
 	return biome_map
 
@@ -486,21 +497,15 @@ func generate_biome_map_test():
 		col.resize(HEIGHT + 1)
 		map.append(col)
 		for y in range(HEIGHT + 1):
-			if y < 1 * (HEIGHT + 1) / BIOME.size():
-				map[x][y] = BIOME.values()[0]
-			elif y < 2 * (HEIGHT + 1) / BIOME.size():
-				map[x][y] = BIOME.values()[1]
-			elif y < 3 * (HEIGHT + 1) / BIOME.size():
-				map[x][y] = BIOME.values()[2]
-			elif y < 4 * (HEIGHT + 1) / BIOME.size():
-				map[x][y] = BIOME.values()[3]
-			elif y < 5 * (HEIGHT + 1) / BIOME.size():
-				map[x][y] = BIOME.values()[4]
+			for i in range(biomes.size()):
+				if y < i * (HEIGHT + 1) / biomes.size():
+					map[x][y] = i
+	
 	return map
 
 
 # Generates randomness to height map
-func generate_height_map(biome_map: Array, is_flat: bool) -> Array:
+func generate_height_map(is_flat: bool) -> Array:
 	height_map = []
 	
 	for x in range(WIDTH + 1):
@@ -512,17 +517,7 @@ func generate_height_map(biome_map: Array, is_flat: bool) -> Array:
 			var height = 0
 			
 			if !is_flat:
-				match biome_map[x][y]:
-					BIOME.MOUNTAINS:
-						height = 30 + 150 * noise.get_noise_2d(3 * x, 3 * y)
-					BIOME.HILLS:
-						height = 20 + 100 * noise.get_noise_2d(1.5 * x, 1.5 * y)
-					BIOME.PLAINS:
-						height = 10 + 50 * noise.get_noise_2d(x, y)
-					BIOME.BEACHS:
-						height = 5 + 12 * noise.get_noise_2d(15 * x, 5 * y)
-					BIOME.OCEANS:
-						height = 0
+				height = biomes[biome_map[x][y]].height_at(x, y)
 				if height < 0:
 					height = 0
 			
@@ -575,7 +570,7 @@ func convolve(matrix: Array, kernel: Array) -> Array:
 
 
 # Creates color map using biome and height data
-func generate_colors(biome_map: Array, is_blank: bool = false) -> Array:
+func generate_colors(is_blank: bool = false) -> Array:
 	var color_map = []
 	
 	for x in range(WIDTH + 1):
@@ -585,29 +580,24 @@ func generate_colors(biome_map: Array, is_blank: bool = false) -> Array:
 		
 		for y in range(HEIGHT + 1):
 			if VIEW_BIOME_MAP || is_blank:
-				if biome_map[x][y] == 0:
+				if biome_map[x][y] == -1:
 					color_map[x][y] = Color(255, 255, 255, 1)
-				if biome_map[x][y] == BIOME.MOUNTAINS:
-					color_map[x][y] = Color(255, 0, 0, 1)
-				elif biome_map[x][y] == BIOME.HILLS:
-					color_map[x][y] = Color(255, 255, 0, 1)
-				elif biome_map[x][y] == BIOME.PLAINS:
-					color_map[x][y] = Color(0, 255, 0, 1)
-				elif biome_map[x][y] == BIOME.BEACHS:
-					color_map[x][y] = Color(0, 255, 255, 1)
-				elif biome_map[x][y] == BIOME.OCEANS:
-					color_map[x][y] = Color(0, 0, 255, 1)
+				else:
+					color_map[x][y] = biomes[biome_map[x][y]].color
 			else:
 				if height_map[x][y] > 35:
 					color_map[x][y] = SNOW
-				elif biome_map[x][y] == BIOME.BEACHS:
+				elif biomes[biome_map[x][y]].name == "Beaches":
 					color_map[x][y] = SAND
-				elif height_map[x][y] > 0 && biome_map[x][y] == BIOME.OCEANS:
+				elif height_map[x][y] > 5 && biomes[biome_map[x][y]].name == "Oceans":
+					color_map[x][y] = GRASS
+				elif height_map[x][y] > 0 && biomes[biome_map[x][y]].name == "Oceans":
 					color_map[x][y] = SAND
 				elif height_map[x][y] < 1:
 					color_map[x][y] = WATER
 				else:
 					color_map[x][y] = GRASS
+				#color_map[x][y] = biomes[biome_map[x][y]].color_at(height_map[x][y])
 	
 	return color_map
 

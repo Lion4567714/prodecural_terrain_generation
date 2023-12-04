@@ -12,8 +12,6 @@ var mesh_script = preload("res://scripts/mesh_controller.gd")
 var gui_script = preload("res://scripts/gui_controller.gd")
 
 func _ready():
-	print("GameController._ready()")
-	
 	camera_node = get_node("/root/Node3D/Camera3D")
 	camera_node.free()
 	camera_node = camera_prefab.instantiate()
@@ -32,19 +30,11 @@ func _ready():
 	mesh_node.set_script(mesh_script)
 	add_child(mesh_node)
 	
-	#var thread = Thread.new()
-	#thread.start(mesh_node.initialize)
-	mesh_node.initialize()
-	
 	gui_node.initialize()
-
-
-func _process(delta):
-	pass
 
 
 func _input(event):
 	if event is InputEventKey and event.pressed:
 		if event.keycode == KEY_R:
 			var thread = Thread.new()
-			thread.start(mesh_node.generate_mesh.bind())
+			thread.start(mesh_node.generate_mesh)
