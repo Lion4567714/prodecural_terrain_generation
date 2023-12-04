@@ -7,9 +7,9 @@ var progress_bar: ProgressBar
 func initialize():
 	print("GUIController.initialize()")
 	
-	var counter = 0
-	while true:
-		counter += 1
+	mesh_controller = get_node("/root/Node3D/MeshInstance3D")
+	print(mesh_controller.get_signal_list())
+	mesh_controller.progress_updated.connect(_handle_progress_update)
 
 
 func _init():
@@ -21,8 +21,6 @@ func _ready():
 	
 	progress_bar = get_node("/root/Node3D/Canvas/ProgressBar")
 	
-	mesh_controller = get_node("/root/Node3D/MeshInstance3D")
-	print(mesh_controller.get_signal_list())
 	#print(mesh_controller)
 	#print(mesh_controller.progress_updated)
 	#mesh_controller.progress_updated.connect(_handle_progress_update)

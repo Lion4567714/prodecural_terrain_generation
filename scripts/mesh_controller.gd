@@ -9,8 +9,8 @@ var VIEW_HEIGHT_MAP = true
 var ENABLE_SMOOTHING = true
 
 # Mesh settings
-const WIDTH = 75
-const HEIGHT = 75
+const WIDTH = 150
+const HEIGHT = 150
 const CELL_SIZE = 3.0
 const FEATURE_SENSITIVITY = 0.5
 const BIOME_BLEND = 5
@@ -105,6 +105,8 @@ class Biome:
 # Runs once at the start
 # Sets up blank mesh and prints controls to output
 func _ready():
+	add_user_signal("progress_updated", [{"name": "ratio", "type": TYPE_FLOAT}])
+	
 	camera = get_viewport().get_camera_3d()
 	
 	collision_area = get_node("/root/Node3D/Area3D")
@@ -218,11 +220,7 @@ func toggle(setting: bool, setting_name: String) -> bool:
 
 
 # Sets up global variables
-func initialize() -> void:
-	add_user_signal("progress_updated")
-	#add_user_signal("progress_updated", [{"name": "ratio", "type": TYPE_FLOAT}])
-	print(get_signal_list())
-	
+func initialize() -> void:	
 	self.mesh = generate_grid()
 	
 	noise = FastNoiseLite.new()
@@ -444,7 +442,7 @@ func generate_biome_map():
 				collapse_node(node, node_mat, node_arrs)
 	
 	while num_uncollapsed_nodes > 0:
-		progress_updated.emit(1 - num_uncollapsed_nodes / ((WIDTH + 1) * (HEIGHT + 1)))
+		call_deferred("emit_signal", "progress_updated", 1.0 - num_uncollapsed_nodes / (float)((WIDTH + 1) * (HEIGHT + 1)))
 		
 		# Find the first array with > 0 nodes, choose a random node within that array
 		var rand_node = null
@@ -476,8 +474,6 @@ func generate_biome_map():
 	for x in range(WIDTH + 1):
 		for y in range(HEIGHT + 1):
 			biome_map[x][y] = node_mat[x][y].options
-	
-	#progress_bar.visible = false
 	
 	return biome_map
 
