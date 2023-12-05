@@ -85,7 +85,7 @@ class Biome:
 
 # Runs once at the start
 # Sets up blank mesh and prints controls to output
-func _ready():	
+func _ready():
 	# Initialize signals
 	add_user_signal("progress_updated", [{"name": "ratio", "type": TYPE_FLOAT}])
 	
@@ -306,7 +306,7 @@ func generate_mesh(is_blank: bool = false) -> void:
 		color_map = generate_colors()
 	print_status("Generated color map")
 	
-	mesh = compile_mesh(mdt, color_map)
+	self.mesh = compile_mesh(mdt, color_map)
 	print_status("Mesh compiled")
 	
 	call_deferred("emit_signal", "progress_updated", -1)
@@ -446,7 +446,7 @@ func generate_biome_map():
 				var node: WFCNode = node_mat[x][y]
 				node_arrs[node.num_options - 1].erase(node)
 				node_arrs[0].append(node)
-				node.options = pow(2, biome_map[x][y])
+				node.options = int(pow(2, biome_map[x][y]))
 				node.num_options = 1
 				num_uncollapsed_nodes -= 1
 				collapse_node(node, node_mat, node_arrs)

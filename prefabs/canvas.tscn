@@ -32,7 +32,15 @@ text = "Brush Size:     [b]1[/b]"
 fit_content = true
 
 [node name="ProgressBar" type="ProgressBar" parent="."]
-offset_left = 281.0
-offset_top = 609.0
-offset_right = 914.0
-offset_bottom = 638.0
+anchors_preset = 7
+anchor_left = 0.5
+anchor_top = 1.0
+anchor_right = 0.5
+anchor_bottom = 1.0
+offset_left = -316.0
+offset_top = -44.0
+offset_right = 317.0
+offset_bottom = -15.0
+grow_horizontal = 2
+grow_vertical = 0
+size_flags_vertical = 2
