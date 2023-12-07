@@ -124,7 +124,6 @@ func _ready():
 	progress_bar = get_node("/root/Node3D/Canvas/ProgressBar")
 	
 	# Print controls
-	"""
 	print("Controls:")
 	print("WASD+C+Space: camera movement")
 	print("LMB: draw biome")
@@ -139,19 +138,16 @@ func _ready():
 	print("M: toggle status messages")
 	print("O: toggle terrain smoothing")
 	print("-----")
-	"""
 	
 	reset_mesh()
 	generate_mesh(true)
 
 
 func initialize_biomes() -> void:
-	biomes.append(Biome.new("Mountains", Color.RED, noise, 30, 150, 3, 3, \
-		[Color.WHITE, Color.GREEN, Color.BLUE], [Vector2(-1, 35), Vector2(35, 0), Vector2(0, -1)]))
-	biomes.append(Biome.new("Plains", Color.GREEN, noise, 10, 50, 1, 1, \
-		[Color.GREEN], [Vector2(-1, -1)]))
-	biomes.append(Biome.new("Oceans", Color.BLUE, noise, 0, 0, 0, 0, \
-		[Color.BLUE], [Vector2(-1, -1)]))
+	biomes.append(Biome.new("Mountains", Color.RED, noise, 30, 150, 3, 3))
+	biomes.append(Biome.new("Plains", Color.GREEN, noise, 10, 50, 1, 1))
+	#biomes.append(Biome.new("Purple Biome", Color.PURPLE, noise, 150, 0, 0, 0))
+	biomes.append(Biome.new("Oceans", Color.BLUE, noise, 0, 0, 0, 0))
 
 
 # Sets up global variables

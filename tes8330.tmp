@@ -1,0 +1,27 @@
+[gd_scene load_steps=6 format=3 uid="uid://dltnb0relog3g"]
+
+[ext_resource type="Script" path="res://scripts/game_controller.gd" id="1_o42xo"]
+[ext_resource type="PackedScene" uid="uid://c7npy7wyerkju" path="res://prefabs/mesh_instance_3d.tscn" id="2_sqdj8"]
+[ext_resource type="PackedScene" uid="uid://cq00odt7kej4w" path="res://prefabs/camera_3d.tscn" id="3_g461y"]
+[ext_resource type="PackedScene" uid="uid://dxm2d7pv00toe" path="res://prefabs/canvas.tscn" id="4_8rcpw"]
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_bvm41"]
+
+[node name="Node3D" type="Node3D"]
+script = ExtResource("1_o42xo")
+
+[node name="MeshInstance3D" parent="." instance=ExtResource("2_sqdj8")]
+
+[node name="Camera3D" parent="." instance=ExtResource("3_g461y")]
+
+[node name="DirectionalLight3D" type="DirectionalLight3D" parent="."]
+transform = Transform3D(-0.104846, 0.700573, -0.705836, 0.102935, 0.713581, 0.69297, 0.989147, 1.47394e-08, -0.146929, -54.4205, 41.9618, 0)
+
+[node name="Area3D" type="Area3D" parent="."]
+transform = Transform3D(10, 0, 0, 0, 10, 0, 0, 0, 10, 0, 0, 0)
+
+[node name="AreaCollider" type="CollisionShape3D" parent="Area3D"]
+shape = SubResource("BoxShape3D_bvm41")
+
+[node name="Canvas" parent="." instance=ExtResource("4_8rcpw")]
+visible = false
