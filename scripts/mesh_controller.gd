@@ -9,8 +9,8 @@ var VIEW_HEIGHT_MAP = true
 var ENABLE_SMOOTHING = true
 
 # Mesh settings
-const WIDTH = 75
-const HEIGHT = 75
+const WIDTH = 100
+const HEIGHT = 100
 const CELL_SIZE = 3.0
 const FEATURE_SENSITIVITY = 0.5
 const BIOME_BLEND = 5
@@ -144,9 +144,11 @@ func _ready():
 
 
 func initialize_biomes() -> void:
+	# Biome(name, color preset, noise, offset, amplitude, x-sensitivity, y-sensitivity)
 	biomes.append(Biome.new("Mountains", Color.RED, noise, 30, 150, 3, 3))
 	biomes.append(Biome.new("Plains", Color.GREEN, noise, 10, 50, 1, 1))
-	#biomes.append(Biome.new("Purple Biome", Color.PURPLE, noise, 150, 0, 0, 0))
+	biomes.append(Biome.new("Deserts", Color.GOLDENROD, noise, 5, 10, 20, 5))
+	biomes.append(Biome.new("Purple Biome", Color.PURPLE, noise, 150, 0, 0, 0))
 	biomes.append(Biome.new("Oceans", Color.BLUE, noise, 0, 0, 0, 0))
 
 
@@ -583,7 +585,7 @@ func generate_colors(is_blank: bool = false) -> Array:
 			else:
 				if height_map[x][y] > 35:
 					color_map[x][y] = SNOW
-				elif biomes[biome_map[x][y]].name == "Beaches":
+				elif biomes[biome_map[x][y]].name == "Deserts":
 					color_map[x][y] = SAND
 				elif height_map[x][y] > 5 && biomes[biome_map[x][y]].name == "Oceans":
 					color_map[x][y] = GRASS
